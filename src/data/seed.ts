@@ -5,49 +5,49 @@ import { QdrantPoint } from '@/lib/types'
 // Демонстрационные документы
 const documents = [
   {
-    id: '1',
+    id: 1,
     content:
       'Next.js — это React-фреймворк для создания веб-приложений. Он предоставляет серверный рендеринг, статическую генерацию, API роуты и многое другое. Next.js оптимизирован для производительности и SEO.',
     metadata: { category: 'framework', topic: 'nextjs' },
   },
   {
-    id: '2',
+    id: 2,
     content:
       'TypeScript — это типизированное надмножество JavaScript. Он добавляет статическую типизацию, что помогает избежать ошибок на этапе разработки и улучшает качество кода.',
     metadata: { category: 'language', topic: 'typescript' },
   },
   {
-    id: '3',
+    id: 3,
     content:
       'Tailwind CSS — это utility-first CSS фреймворк. Он позволяет быстро создавать пользовательские интерфейсы, используя предопределенные классы утилит.',
     metadata: { category: 'styling', topic: 'tailwind' },
   },
   {
-    id: '4',
+    id: 4,
     content:
       'OpenAI API предоставляет доступ к мощным языковым моделям, включая GPT-3.5-turbo и GPT-4. API поддерживает чат-комплектации, эмбеддинги и другие возможности.',
     metadata: { category: 'ai', topic: 'openai' },
   },
   {
-    id: '5',
+    id: 5,
     content:
       'Qdrant — это векторная база данных для поиска по сходству. Она оптимизирована для машинного обучения и позволяет эффективно хранить и искать векторные эмбеддинги.',
     metadata: { category: 'database', topic: 'qdrant' },
   },
   {
-    id: '6',
+    id: 6,
     content:
       'RAG (Retrieval-Augmented Generation) — это техника, которая сочетает поиск информации с генерацией текста. Сначала система находит релевантные документы, затем использует их как контекст для генерации ответа.',
     metadata: { category: 'ai', topic: 'rag' },
   },
   {
-    id: '7',
+    id: 7,
     content:
       'React — это JavaScript библиотека для создания пользовательских интерфейсов. Она использует компонентный подход и виртуальный DOM для эффективного обновления UI.',
     metadata: { category: 'library', topic: 'react' },
   },
   {
-    id: '8',
+    id: 8,
     content:
       'API роуты в Next.js позволяют создавать серверные эндпоинты прямо в приложении. Они поддерживают различные HTTP методы и могут обрабатывать запросы и ответы.',
     metadata: { category: 'framework', topic: 'api-routes' },

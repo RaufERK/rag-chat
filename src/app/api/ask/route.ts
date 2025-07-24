@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
 
     // 2. Ищем похожие документы в Qdrant
     console.log('🔍 Searching for similar documents...')
-    const similarDocuments = await searchSimilar(questionEmbedding, 3, 0.1)
+    const similarDocuments = await searchSimilar(questionEmbedding, 3, 0.05)
     console.log(`📊 Found ${similarDocuments.length} similar documents`)
 
     // 3. Формируем контекст из найденных документов

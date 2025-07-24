@@ -4,7 +4,7 @@ export interface DocumentMetadata {
 }
 
 export interface Document {
-  id: string
+  id: string | number
   content: string
   metadata?: DocumentMetadata
 }
