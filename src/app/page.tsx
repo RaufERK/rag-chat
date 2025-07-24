@@ -9,6 +9,8 @@ export default function Home() {
   const [sources, setSources] = useState<Document[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState('')
+  const [hasContext, setHasContext] = useState(false)
+  const [sourcesCount, setSourcesCount] = useState(0)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -19,6 +21,8 @@ export default function Home() {
     setError('')
     setAnswer('')
     setSources([])
+    setHasContext(false)
+    setSourcesCount(0)
 
     try {
       const response = await fetch('/api/ask', {
@@ -35,8 +39,12 @@ export default function Home() {
 
       const data: AskResponse = await response.json()
       setAnswer(data.answer)
+      setHasContext(data.hasContext)
+      setSourcesCount(data.sourcesCount)
       if (data.sources) {
         setSources(data.sources)
+      } else {
+        setSources([])
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Произошла ошибка')
@@ -123,13 +131,36 @@ export default function Home() {
 
             {/* Answer */}
             {answer && (
-              <div className='bg-gray-800 rounded-lg p-6 border border-gray-700'>
+              <div
+                className={`rounded-lg p-6 border ${
+                  hasContext
+                    ? 'bg-blue-900/30 border-blue-700'
+                    : 'bg-green-900/30 border-green-700'
+                }`}
+              >
                 <div className='flex items-start gap-3 mb-4'>
-                  <div className='w-8 h-8 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0'>
+                  <div
+                    className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                      hasContext ? 'bg-blue-600' : 'bg-green-600'
+                    }`}
+                  >
                     <span className='text-white text-sm font-medium'>AI</span>
                   </div>
                   <div className='flex-1'>
-                    <h3 className='text-white font-medium mb-2'>Ответ:</h3>
+                    <div className='flex items-center gap-3 mb-2'>
+                      <h3 className='text-white font-medium'>Ответ:</h3>
+                      <span
+                        className={`px-2 py-1 rounded text-xs font-medium ${
+                          hasContext
+                            ? 'bg-blue-600/20 text-blue-300 border border-blue-600/30'
+                            : 'bg-green-600/20 text-green-300 border border-green-600/30'
+                        }`}
+                      >
+                        {hasContext
+                          ? `📚 RAG (${sourcesCount} источников)`
+                          : '🤖 GPT Only'}
+                      </span>
+                    </div>
                     <div className='text-gray-300 leading-relaxed whitespace-pre-wrap'>
                       {answer}
                     </div>
@@ -137,7 +168,7 @@ export default function Home() {
                 </div>
 
                 {/* Sources */}
-                {sources.length > 0 && (
+                {hasContext && sources.length > 0 && (
                   <div className='mt-6 pt-6 border-t border-gray-700'>
                     <h4 className='text-white font-medium mb-3'>Источники:</h4>
                     <div className='space-y-3'>

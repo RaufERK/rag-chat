@@ -42,4 +42,7 @@ export interface AskRequest {
 export interface AskResponse {
   answer: string
   sources?: Document[]
+  hasContext: boolean
+  sourcesCount: number
+  searchScore?: number
 }
