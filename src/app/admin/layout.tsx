@@ -1,11 +1,16 @@
 import Link from 'next/link'
 import LogoutButton from '@/components/LogoutButton'
+import { auth } from '@/lib/auth'
 
 export default async function AdminLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const session = await auth()
+
+  // Middleware уже проверил авторизацию, здесь просто получаем данные
+
   return (
     <div className='min-h-screen bg-gray-900/60 relative z-10'>
       <nav className='bg-indigo-900 border-b border-gray-700'>
@@ -17,7 +22,7 @@ export default async function AdminLayout({
               </h1>
             </div>
             <div className='flex items-center space-x-4'>
-              <span className='text-gray-300'>admin@example.com</span>
+              <span className='text-gray-300'>{session?.user?.email}</span>
               <Link
                 href='/'
                 className='text-gray-300 hover:text-white px-3 py-2 rounded-md text-sm font-medium'

@@ -1,13 +1,34 @@
 import NextAuth from 'next-auth'
 import CredentialsProvider from 'next-auth/providers/credentials'
 
+declare module 'next-auth' {
+  interface User {
+    role?: string
+  }
+
+  interface Session {
+    user: {
+      id?: string
+      email?: string
+      name?: string
+      role?: string
+    }
+  }
+}
+
+declare module 'next-auth/jwt' {
+  interface JWT {
+    role?: string
+  }
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     CredentialsProvider({
       name: 'Credentials',
       credentials: {
-        email: { label: "Email", type: "email" },
-        password: { label: "Password", type: "password" }
+        email: { label: 'Email', type: 'email' },
+        password: { label: 'Password', type: 'password' },
       },
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) {
@@ -17,23 +38,25 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const adminEmail = process.env.ADMIN_EMAIL
         const adminPassword = process.env.ADMIN_PASSWORD
 
-        if (credentials.email === adminEmail && 
-            credentials.password === adminPassword) {
+        if (
+          credentials.email === adminEmail &&
+          credentials.password === adminPassword
+        ) {
           return {
             id: '1',
             email: adminEmail,
             name: 'Admin',
-            role: 'admin'
+            role: 'admin',
           }
         }
 
         return null
-      }
-    })
+      },
+    }),
   ],
   pages: {
     signIn: '/admin/login',
-    error: '/admin/login'
+    error: '/admin/login',
   },
   callbacks: {
     async jwt({ token, user }) {
@@ -47,10 +70,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         session.user.role = token.role
       }
       return session
-    }
+    },
   },
   session: {
     strategy: 'jwt',
     maxAge: 24 * 60 * 60, // 24 hours
-  }
-}) 
+  },
+})
