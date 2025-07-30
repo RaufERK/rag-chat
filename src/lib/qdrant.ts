@@ -5,18 +5,28 @@ const QDRANT_URL = process.env.QDRANT_URL
 const QDRANT_API_KEY = process.env.QDRANT_API_KEY
 const QDRANT_COLLECTION_NAME = process.env.QDRANT_COLLECTION_NAME || 'documents'
 
-if (!QDRANT_URL) {
-  throw new Error('QDRANT_URL is not set in environment variables')
-}
+// Создаем клиент только если URL настроен
+let client: QdrantClient | null = null
 
-const client = new QdrantClient({
-  url: QDRANT_URL,
-  apiKey: QDRANT_API_KEY,
-})
+function getClient(): QdrantClient {
+  if (!QDRANT_URL) {
+    throw new Error('QDRANT_URL is not set in environment variables')
+  }
+  
+  if (!client) {
+    client = new QdrantClient({
+      url: QDRANT_URL,
+      apiKey: QDRANT_API_KEY,
+    })
+  }
+  
+  return client
+}
 
 export async function createCollection(): Promise<void> {
   try {
-    await client.createCollection(QDRANT_COLLECTION_NAME, {
+    const qdrantClient = getClient()
+    await qdrantClient.createCollection(QDRANT_COLLECTION_NAME, {
       vectors: {
         size: 1536, // OpenAI ada-002 embedding size
         distance: 'Cosine',
@@ -34,8 +44,10 @@ export async function createCollection(): Promise<void> {
 }
 
 export async function upsertPoints(points: QdrantPoint[]): Promise<void> {
+  const qdrantClient = getClient()
+  
   for (const point of points) {
-    await client.upsert(QDRANT_COLLECTION_NAME, {
+    await qdrantClient.upsert(QDRANT_COLLECTION_NAME, {
       points: [
         {
           id: point.id,
@@ -55,7 +67,9 @@ export async function searchSimilar(
   limit: number = 5,
   scoreThreshold: number = 0.7
 ): Promise<Document[]> {
-  const response = await client.search(QDRANT_COLLECTION_NAME, {
+  const qdrantClient = getClient()
+  
+  const response = await qdrantClient.search(QDRANT_COLLECTION_NAME, {
     vector: vector,
     limit: limit,
     score_threshold: scoreThreshold,
@@ -71,7 +85,8 @@ export async function searchSimilar(
 
 export async function deleteCollection(): Promise<void> {
   try {
-    await client.deleteCollection(QDRANT_COLLECTION_NAME)
+    const qdrantClient = getClient()
+    await qdrantClient.deleteCollection(QDRANT_COLLECTION_NAME)
     console.log('Collection deleted successfully')
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : String(error)

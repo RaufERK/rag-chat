@@ -19,9 +19,18 @@ export async function POST(request: NextRequest) {
     const questionEmbedding = await getEmbedding(question)
 
     // 2. Ищем похожие документы в Qdrant
-    console.log('🔍 Searching for similar documents...')
-    const similarDocuments = await searchSimilar(questionEmbedding, 3, 0.05)
-    console.log(`📊 Found ${similarDocuments.length} similar documents`)
+    let similarDocuments: any[] = []
+    let hasQdrantError = false
+    
+    try {
+      console.log('🔍 Searching for similar documents...')
+      similarDocuments = await searchSimilar(questionEmbedding, 3, 0.05)
+      console.log(`📊 Found ${similarDocuments.length} similar documents`)
+    } catch (qdrantError) {
+      console.error('❌ Qdrant error:', qdrantError)
+      hasQdrantError = true
+      similarDocuments = []
+    }
 
     // 3. Формируем контекст из найденных документов
     const context =
@@ -32,7 +41,11 @@ export async function POST(request: NextRequest) {
     if (context) {
       console.log('📝 Using RAG context for answer generation')
     } else {
-      console.log('⚠️ No relevant documents found, using GPT only')
+      if (hasQdrantError) {
+        console.log('⚠️ Qdrant unavailable, using GPT only')
+      } else {
+        console.log('⚠️ No relevant documents found, using GPT only')
+      }
     }
 
     // 4. Создаем сообщение пользователя
@@ -50,12 +63,24 @@ export async function POST(request: NextRequest) {
       sources: similarDocuments.length > 0 ? similarDocuments : undefined,
       hasContext: similarDocuments.length > 0,
       sourcesCount: similarDocuments.length,
-      searchScore: similarDocuments.length > 0 ? 0.8 : undefined, // Примерный score
+      searchScore: similarDocuments.length > 0 ? 0.8 : undefined,
+      qdrantStatus: hasQdrantError ? 'error' : 'ok'
     }
 
     return NextResponse.json(response)
   } catch (error) {
     console.error('Error in /api/ask:', error)
+
+    // Проверяем, является ли ошибка связанной с Qdrant
+    if (error instanceof Error && error.message.includes('QDRANT_URL')) {
+      return NextResponse.json(
+        { 
+          error: 'Vector database is not configured. Please set up Qdrant or use mock mode.',
+          details: 'Qdrant configuration is missing or invalid'
+        },
+        { status: 503 }
+      )
+    }
 
     return NextResponse.json(
       { error: 'Internal server error' },

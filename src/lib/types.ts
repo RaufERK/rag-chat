@@ -45,4 +45,5 @@ export interface AskResponse {
   hasContext: boolean
   sourcesCount: number
   searchScore?: number
+  qdrantStatus?: 'ok' | 'error'
 }
