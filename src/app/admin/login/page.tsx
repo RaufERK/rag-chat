@@ -54,66 +54,70 @@ export default function LoginPage() {
   }
 
   return (
-    <div className='min-h-screen flex items-center justify-center bg-gray-900'>
-      <div className='max-w-md w-full space-y-8'>
-        <div>
-          <h2 className='text-center text-3xl font-bold text-white'>
-            Вход в админ-панель
-          </h2>
-          <p className='mt-2 text-center text-gray-400'>
-            RAG Chat Administration
-          </p>
-        </div>
-        <form className='mt-8 space-y-6' onSubmit={handleSubmit}>
-          {error && (
-            <div className='bg-red-900/20 border border-red-700 rounded-lg p-4'>
-              <p className='text-red-400'>{error}</p>
-            </div>
-          )}
-          <div className='space-y-4'>
-            <div>
-              <label
-                htmlFor='email'
-                className='block text-sm font-medium text-gray-300'
-              >
-                Email
-              </label>
-              <input
-                id='email'
-                type='email'
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder='admin@example.com'
-                className='mt-1 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
-                required
-              />
-            </div>
-            <div>
-              <label
-                htmlFor='password'
-                className='block text-sm font-medium text-gray-300'
-              >
-                Пароль
-              </label>
-              <input
-                id='password'
-                type='password'
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder='••••••••'
-                className='mt-1 w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500'
-                required
-              />
-            </div>
+    <div className='min-h-screen flex items-center justify-center p-4'>
+      <div className='w-full max-w-md'>
+        <div className='bg-indigo-900/70 border border-indigo-700 rounded-lg p-8 backdrop-blur-sm'>
+          <div className='text-center mb-8'>
+            <div className='text-4xl mb-4'>🔐</div>
+            <h2 className='text-2xl font-bold text-white mb-2'>
+              Вход в админ-панель
+            </h2>
+            <p className='text-gray-300'>RAG Chat Administration</p>
           </div>
-          <button
-            type='submit'
-            disabled={isLoading}
-            className='w-full py-2 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors'
-          >
-            {isLoading ? 'Вход...' : 'Войти'}
-          </button>
-        </form>
+
+          <form className='space-y-6' onSubmit={handleSubmit}>
+            {error && (
+              <div className='bg-red-900/30 border border-red-700 rounded-lg p-4'>
+                <p className='text-red-300'>{error}</p>
+              </div>
+            )}
+
+            <div className='space-y-4'>
+              <div>
+                <label
+                  htmlFor='email'
+                  className='block text-sm font-medium text-gray-200 mb-2'
+                >
+                  Email
+                </label>
+                <input
+                  id='email'
+                  type='email'
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder='admin@example.com'
+                  className='w-full px-4 py-3 bg-gray-700/80 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 backdrop-blur-sm'
+                  required
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor='password'
+                  className='block text-sm font-medium text-gray-200 mb-2'
+                >
+                  Пароль
+                </label>
+                <input
+                  id='password'
+                  type='password'
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder='••••••••'
+                  className='w-full px-4 py-3 bg-gray-700/80 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 backdrop-blur-sm'
+                  required
+                />
+              </div>
+            </div>
+
+            <button
+              type='submit'
+              disabled={isLoading}
+              className='w-full py-3 px-4 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors font-medium'
+            >
+              {isLoading ? 'Вход...' : 'Войти'}
+            </button>
+          </form>
+        </div>
       </div>
     </div>
   )
