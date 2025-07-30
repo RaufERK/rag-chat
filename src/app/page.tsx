@@ -58,6 +58,11 @@ export default function Home() {
       }
 
       setMessages((prev) => [...prev, newMessage])
+
+      // Автоматически сворачиваем источники для нового сообщения
+      if (data.hasContext && data.sources && data.sources.length > 0) {
+        setCollapsedSources((prev) => new Set([...prev, newMessage.id]))
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Произошла ошибка')
     } finally {
@@ -175,17 +180,6 @@ export default function Home() {
                     <div className='flex-1'>
                       <div className='flex items-center gap-3 mb-2'>
                         <h3 className='text-white font-medium'>Ответ:</h3>
-                        <span
-                          className={`px-2 py-1 rounded text-xs font-medium ${
-                            message.hasContext
-                              ? 'bg-purple-600/20 text-purple-300 border border-purple-600/30'
-                              : 'bg-indigo-600/20 text-indigo-300 border border-indigo-600/30'
-                          }`}
-                        >
-                          {message.hasContext
-                            ? `📚 RAG (${message.sourcesCount} источников)`
-                            : '🤖 GPT Only'}
-                        </span>
                       </div>
                       <div className='text-gray-300 leading-relaxed whitespace-pre-wrap'>
                         {message.answer}
@@ -272,7 +266,7 @@ export default function Home() {
             {isLoading && (
               <div className='bg-gray-800/90 rounded-lg p-6 border border-gray-700'>
                 <div className='flex items-start gap-3'>
-                  <div className='w-8 h-8 bg-green-600 rounded-full flex items-center justify-center flex-shrink-0'>
+                  <div className='w-8 h-8 bg-yellow-600 rounded-full flex items-center justify-center flex-shrink-0'>
                     <span className='text-white text-sm font-medium'>AI</span>
                   </div>
                   <div className='flex-1'>
