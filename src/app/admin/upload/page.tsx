@@ -200,8 +200,8 @@ export default function UploadPage() {
       <div
         className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
           isDragOver
-            ? 'border-blue-400 bg-blue-900/20'
-            : 'border-gray-600 hover:border-gray-500'
+            ? 'border-blue-400 bg-blue-900/40'
+            : 'border-gray-600 hover:border-gray-500 bg-gray-800/20'
         }`}
         onDrop={handleDrop}
         onDragOver={handleDragOver}
@@ -256,7 +256,7 @@ export default function UploadPage() {
             {files.map((fileData) => (
               <div
                 key={fileData.id}
-                className='bg-gray-800 rounded-lg p-4 border border-gray-700'
+                className='bg-gray-800/90 rounded-lg p-4 border border-gray-700'
               >
                 <div className='flex items-center justify-between'>
                   <div className='flex-1'>

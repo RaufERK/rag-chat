@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { SessionProvider } from "@/components/providers/SessionProvider";
+import { BackgroundImage } from "@/components/BackgroundImage";
 
 export const metadata: Metadata = {
   title: "RAG Chat - AI Assistant",
@@ -15,6 +16,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
+        <BackgroundImage />
         <SessionProvider>
           {children}
         </SessionProvider>
