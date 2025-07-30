@@ -17,20 +17,32 @@ function shouldUseMock(): boolean {
 }
 
 export async function getEmbedding(text: string): Promise<number[]> {
+  console.log(
+    `🔍 getEmbedding вызвана с текстом длиной ${text.length} символов`
+  )
+  console.log(
+    `🔧 USE_MOCK=${process.env.USE_MOCK}, NODE_ENV=${process.env.NODE_ENV}`
+  )
+
   if (shouldUseMock()) {
     // Возвращаем детерминированный эмбеддинг для тестирования
     console.log('Using mock embedding for:', text)
-    
+
     // Создаем детерминированный эмбеддинг на основе текста
-    const hash = text.toLowerCase().split('').reduce((acc, char) => {
-      return acc + char.charCodeAt(0)
-    }, 0)
-    
+    const hash = text
+      .toLowerCase()
+      .split('')
+      .reduce((acc, char) => {
+        return acc + char.charCodeAt(0)
+      }, 0)
+
     return Array.from({ length: 1536 }, (_, i) => {
       const seed = (hash + i * 31) % 1000
-      return (Math.sin(seed) * 0.5) // Значения от -0.5 до 0.5
+      return Math.sin(seed) * 0.5 // Значения от -0.5 до 0.5
     })
   }
+
+  console.log(`🚀 Отправляем запрос к OpenAI API для создания эмбеддинга...`)
 
   const response = await fetch('https://api.openai.com/v1/embeddings', {
     method: 'POST',
@@ -68,7 +80,7 @@ export async function getChatCompletion(
     // Возвращаем фиктивный ответ для тестирования
     const lastMessage = messages[messages.length - 1]
     console.log('Using mock chat completion for:', lastMessage.content)
-    
+
     if (context) {
       return `Отличный вопрос! "${lastMessage.content}"\n\nНа основе найденной информации:\n\n${context}\n\nЭто демонстрационный ответ в мок-режиме. В реальном режиме здесь был бы ответ от OpenAI GPT.`
     } else {
