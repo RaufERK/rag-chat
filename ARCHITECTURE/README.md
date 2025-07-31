@@ -43,6 +43,7 @@
 ## 📋 План развития
 
 - [🦜 LangChain.js Integration](./langchain-integration-plan.md) - Интеграция продакшн RAG фреймворка
+- [📄 Multi-Format Support](./multi-format-support-plan.md) - Поддержка PDF, TXT, FB2, EPUB, DOC, DOCX
 - [🗃️ File Management Rework](./file-management-plan.md) - Умная работа с файлами  
 - [👥 User System](./user-system-plan.md) - Роли и права доступа
 - [⚙️ Admin Dashboard](./admin-dashboard-plan.md) - Конфигурируемые настройки
@@ -51,8 +52,9 @@
 
 ### **Функциональные требования:**
 - [ ] LangChain.js RAG pipeline с улучшенным качеством
+- [ ] Поддержка множественных форматов: PDF, TXT, FB2, EPUB, DOC, DOCX
 - [ ] Файлы удаляются после обработки, хранятся только хеши
-- [ ] Система пользователей: Admin (полный доступ) + Editor (только загрузка)
+- [ ] Система пользователей: Admin (полный доступ) + Editor (только загрузка)  
 - [ ] Админ-панель с настройками поиска, температуры, лимитов
 - [ ] Миграция на PostgreSQL для продакшн-развертывания
 
@@ -69,9 +71,14 @@
                                         ↓
 ⚙️ Admin Settings ← 🗄️ PostgreSQL → 🦜 LangChain.js
                                         ↓
-📁 File Upload → 🔄 Process → 🗑️ Delete → 💾 Qdrant
-     ↓                                    ↑
-🔐 Hash Store                          🔍 Vector Search
+📄 Multi-Format Files → 🔍 Format Detection → 🔄 Smart Processing
+(PDF,TXT,FB2,EPUB,DOC,DOCX)                        ↓
+        ↓                                    📝 Text Extraction
+🔐 Hash Store ← 🗑️ Auto Delete ← 📊 Chunk Creation
+        ↓                                    ↓
+    📋 Metadata                          💾 Qdrant Store
+                                         ↑
+                                   🔍 Vector Search
                                         ↓
                                    🤖 GPT-4o Response
 ```
@@ -79,10 +86,11 @@
 ## 🔄 Миграционный путь
 
 1. **Phase 1:** LangChain.js интеграция (сохранить существующий функционал)
-2. **Phase 2:** Переработка файловой системы (хеши вместо хранения)
-3. **Phase 3:** Система пользователей и ролей
-4. **Phase 4:** Админ-панель с настройками в БД
-5. **Phase 5:** Миграция на PostgreSQL
+2. **Phase 2:** Multi-Format Support (PDF, TXT, FB2, EPUB, DOC, DOCX)
+3. **Phase 3:** Переработка файловой системы (хеши вместо хранения)
+4. **Phase 4:** Система пользователей и ролей
+5. **Phase 5:** Админ-панель с настройками в БД
+6. **Phase 6:** Миграция на PostgreSQL
 
 ---
 *Обновлено: январь 2025 - переход к продакшн-архитектуре*

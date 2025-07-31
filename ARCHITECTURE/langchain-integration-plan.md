@@ -137,9 +137,33 @@ export async function POST(request: Request) {
 }
 ```
 
-### **Phase 3: Улучшенные компоненты (2-3 дня)**
+### **Phase 3: Multi-Format Document Loaders (1-2 дня)**
 
-#### 3.1 Кастомный Retriever с re-ranking
+#### 3.1 Интеграция с системой множественных форматов
+```typescript
+// src/lib/langchain/multi-format-loaders.ts
+import { DirectoryLoader } from "langchain/document_loaders/fs/directory"
+import { PDFLoader } from "langchain/document_loaders/fs/pdf"
+import { TextLoader } from "langchain/document_loaders/fs/text"
+import { MultiFormatLoader } from "./document-loaders"
+
+export const supportedExtensions = {
+  ".pdf": (path: string) => new PDFLoader(path),
+  ".txt": (path: string) => new TextLoader(path),
+  ".fb2": (path: string) => new MultiFormatLoader(path, 'fb2'),
+  ".epub": (path: string) => new MultiFormatLoader(path, 'epub'),
+  ".docx": (path: string) => new MultiFormatLoader(path, 'docx'),
+  ".doc": (path: string) => new MultiFormatLoader(path, 'doc'),
+}
+
+export function createDirectoryLoader(directoryPath: string) {
+  return new DirectoryLoader(directoryPath, supportedExtensions)
+}
+```
+
+### **Phase 4: Улучшенные компоненты (2-3 дня)**
+
+#### 4.1 Кастомный Retriever с re-ranking
 ```typescript
 // src/lib/langchain/custom-retriever.ts
 import { BaseRetriever } from "langchain/schema/retriever"
@@ -197,9 +221,9 @@ export const createSpiritualPrompt = (temperature?: number, maxTokens?: number) 
 }
 ```
 
-### **Phase 4: Конфигурируемые параметры (1-2 дня)**
+### **Phase 5: Конфигурируемые параметры (1-2 дня)**
 
-#### 4.1 Настройки в базе данных
+#### 5.1 Настройки в базе данных
 ```sql
 -- Новая таблица для RAG настроек
 CREATE TABLE rag_settings (
@@ -221,7 +245,7 @@ INSERT INTO rag_settings VALUES
 (5, 'score_threshold', '0.3', 'Minimum similarity score', 'number', datetime(), 1);
 ```
 
-#### 4.2 Динамическая конфигурация цепочки
+#### 5.2 Динамическая конфигурация цепочки
 ```typescript
 // src/lib/langchain/config.ts
 import { database } from '@/lib/database'
