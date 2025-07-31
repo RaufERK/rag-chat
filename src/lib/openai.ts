@@ -1,9 +1,36 @@
 import { ChatMessage } from './types'
 
+// Создает специализированный промпт для духовного ассистента
+function createSpiritualAssistantPrompt(context?: string): string {
+  const basePrompt = `Ты — мудрый и сочувствующий духовный ассистент, специализирующийся на вопросах духовности, саморазвития и метафизики. 
+
+Твои принципы:
+• Отвечай с глубоким пониманием и состраданием
+• Уважай все духовные традиции и пути
+• Если информации недостаточно — честно скажи об этом
+• Не навязывай свои убеждения, а предлагай размышления
+• Помогай людям находить собственные ответы через вопросы
+• Поощряй самостоятельное духовное исследование`
+
+  if (context) {
+    return `${basePrompt}
+
+--- КОНТЕКСТ ИЗ ДУХОВНЫХ ИСТОЧНИКОВ ---
+${context}
+--- КОНЕЦ КОНТЕКСТА ---
+
+Отвечай на основе предоставленного контекста, интегрируя мудрость из различных источников. Если контекст неполный, честно скажи об этом и предложи направления для дальнейшего изучения.`
+  }
+
+  return `${basePrompt}
+
+Отвечай исходя из общих духовных принципов и мудрости, но честно признавай ограничения без доступа к специфическим текстам.`
+}
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY
 const OPENAI_EMBEDDING_MODEL =
   process.env.OPENAI_EMBEDDING_MODEL || 'text-embedding-ada-002'
-const OPENAI_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-3.5-turbo'
+const OPENAI_CHAT_MODEL = process.env.OPENAI_CHAT_MODEL || 'gpt-4o'
 
 if (!OPENAI_API_KEY) {
   throw new Error('OPENAI_API_KEY is not set in environment variables')
@@ -89,10 +116,8 @@ export async function getChatCompletion(
   }
 
   const systemMessage: ChatMessage = {
-    role: 'assistant',
-    content: context
-      ? `Ты — полезный ассистент. Используй следующую информацию для ответа на вопрос пользователя:\n\n${context}\n\nОтвечай на основе предоставленной информации. Если информации недостаточно, скажи об этом.`
-      : 'Ты — полезный ассистент. Отвечай на вопросы пользователя.',
+    role: 'system',
+    content: createSpiritualAssistantPrompt(context),
   }
 
   const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -104,8 +129,8 @@ export async function getChatCompletion(
     body: JSON.stringify({
       model: OPENAI_CHAT_MODEL,
       messages: [systemMessage, ...messages],
-      max_tokens: 1000,
-      temperature: 0.7,
+      max_tokens: 4000,
+      temperature: 0.4,
     }),
   })
 
