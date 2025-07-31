@@ -11,11 +11,12 @@ export const FILE_CONFIG = {
   MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '52428800'), // 50MB
   MAX_FILES_PER_DAY: 100,
   ALLOWED_MIME_TYPES: [
-    'application/pdf', // ✅ Включён обратно с фиксом динамического импорта
+    'application/pdf', // ⚠️ Может крашиться на некоторых файлах - улучшен обработчик ошибок
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     'text/plain', // ✅ Включён обратно - простой UTF-8 процессор без утечек памяти
     'application/epub+zip',
     'application/x-fictionbook+xml',
+    'application/msword', // ⚠️ DOC - старый формат Word (процессор временно отключен)
   ],
 
   // Настройки чанкинга

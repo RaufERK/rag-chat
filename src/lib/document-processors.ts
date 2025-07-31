@@ -29,10 +29,28 @@ export class PDFProcessor implements DocumentProcessor {
     try {
       // Полностью динамический импорт без кэширования для избежания проблем с Next.js
       const pdfParse = (await import('pdf-parse')).default
-      const pdfData = await pdfParse(buffer)
-      return pdfData.text.trim()
+      
+      // Добавляем опции для более надежного парсинга
+      const options = {
+        max: 50, // ограничиваем количество страниц для стабильности
+        version: 'v1.10.100' // используем стабильную версию парсера
+      };
+      
+      const pdfData = await pdfParse(buffer, options)
+      
+      if (!pdfData || !pdfData.text) {
+        throw new Error('PDF parsing returned empty result')
+      }
+      
+      const text = pdfData.text.trim()
+      if (text.length === 0) {
+        throw new Error('PDF contains no readable text')
+      }
+      
+      return text
     } catch (error) {
-      throw new Error(`PDF parsing failed: ${error.message}`)
+      console.error('PDF parsing error details:', error)
+      throw new Error(`PDF parsing failed: ${error.message}. This PDF might be corrupted, password-protected, or contain only images.`)
     }
   }
 
@@ -305,12 +323,12 @@ export class DOCProcessor implements DocumentProcessor {
  */
 export class DocumentProcessorFactory {
   private processors: DocumentProcessor[] = [
-    new PDFProcessor(), // ✅ Включён обратно с фиксом динамического импорта
+    new PDFProcessor(), // ⚠️ Включён с улучшенной обработкой ошибок
     new TXTProcessor(), // ✅ Включён обратно - простой UTF-8 декодинг
     new FB2Processor(),
     new EPUBProcessor(),
     new DOCXProcessor(),
-    // new DOCProcessor(), // Временно отключено из-за проблем с textract в Next.js
+    new DOCProcessor(), // ⚠️ Включён - выдает ошибку о несовместимости с Next.js
   ]
 
   /**
