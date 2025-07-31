@@ -153,45 +153,62 @@ export async function POST(request: NextRequest) {
         `📊 [LANGCHAIN] Created ${documents.length} LangChain documents`
       )
 
-      // Safety check: limit number of chunks to prevent API overload
-      if (documents.length > 200) {
+      // AGGRESSIVE: limit number of chunks to prevent API overload
+      if (documents.length > 100) {
         console.warn(
-          `🚨 CRITICAL: Too many chunks (${documents.length}), limiting to 200 to prevent API overload`
+          `🚨 CRITICAL: Too many chunks (${documents.length}), limiting to 100 to prevent API overload`
         )
-        documents.splice(200) // Keep only first 200 chunks
+        documents.splice(100) // Keep only first 100 chunks for stability
       }
 
       // Add documents to vector store using LangChain (batch processing for large files)
       let vectorIds: string[] = []
+
+      // Set timeout for the entire upload operation
+      const uploadTimeout = setTimeout(() => {
+        throw new Error('Upload operation timed out after 5 minutes')
+      }, 5 * 60 * 1000) // 5 minutes timeout
+
       try {
         console.log(
           `🔗 [QDRANT] Adding ${documents.length} documents to vector store...`
         )
-        
-        // Process in batches of 50 to prevent API overload
-        const batchSize = 50
+
+        // Process in small batches of 20 to prevent API overload and crashes
+        const batchSize = 20
         const allVectorIds: string[] = []
-        
+
         for (let i = 0; i < documents.length; i += batchSize) {
           const batch = documents.slice(i, i + batchSize)
-          console.log(`📦 [QDRANT] Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(documents.length / batchSize)} (${batch.length} documents)`)
-          
+          console.log(
+            `📦 [QDRANT] Processing batch ${
+              Math.floor(i / batchSize) + 1
+            }/${Math.ceil(documents.length / batchSize)} (${
+              batch.length
+            } documents)`
+          )
+
           const batchVectorIds = await addDocuments(batch)
           allVectorIds.push(...(batchVectorIds || []))
-          
-          // Small delay between batches to prevent rate limiting
+
+          // Longer delay between batches to prevent rate limiting and server stress
           if (i + batchSize < documents.length) {
-            await new Promise(resolve => setTimeout(resolve, 500)) // 500ms delay
+            await new Promise((resolve) => setTimeout(resolve, 1000)) // 1000ms delay
           }
         }
-        
+
         vectorIds = allVectorIds
         console.log(
           `✅ [QDRANT] Successfully added ${
             vectorIds?.length || 0
           } vectors to Qdrant`
         )
+
+        // Clear timeout on success
+        clearTimeout(uploadTimeout)
       } catch (qdrantError) {
+        // Clear timeout on error
+        clearTimeout(uploadTimeout)
         console.error(
           '❌ [QDRANT] Error adding documents to vector store:',
           qdrantError

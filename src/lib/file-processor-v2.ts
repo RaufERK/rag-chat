@@ -153,16 +153,24 @@ export class MultiFormatFileProcessor {
   private chunkByChapters(
     text: string
   ): Array<{ content: string; index: number }> {
-    // Fallback to token-based chunking for large texts to prevent OpenAI token limit issues
-    if (text.length > 50000) { // 50KB limit for safety (roughly 12500 tokens)
-      console.warn(`⚠️ Large EPUB/FB2 file (${text.length} chars), using token-based chunking to prevent OpenAI token limit issues`)
-      
-      // For very large files, truncate to prevent server crashes
-      if (text.length > 200000) { // 200KB absolute limit
-        console.warn(`🚨 CRITICAL: File too large (${text.length} chars), truncating to 200KB to prevent server crash`)
-        text = text.substring(0, 200000) + '\n\n[... файл обрезан из-за большого размера ...]'
+    // AGGRESSIVE: For EPUB/FB2 always use token-based chunking with hard limits
+    if (text.length > 30000) {
+      // 30KB limit - very conservative
+      console.warn(
+        `⚠️ Large EPUB/FB2 file (${text.length} chars), using token-based chunking to prevent OpenAI token limit issues`
+      )
+
+      // AGGRESSIVE TRUNCATION: Hard limit at 80KB to prevent crashes
+      if (text.length > 80000) {
+        // 80KB absolute limit
+        console.warn(
+          `🚨 CRITICAL: File too large (${text.length} chars), truncating to 80KB to prevent server crash`
+        )
+        text =
+          text.substring(0, 80000) +
+          '\n\n[... файл обрезан из-за большого размера для стабильной работы ...]'
       }
-      
+
       return this.chunkByTokens(text)
     }
 
@@ -209,26 +217,34 @@ export class MultiFormatFileProcessor {
     // If chapters are too large, split them more carefully
     const finalChunks = []
     let chunkIndex = 0
-    
+
     for (const chapter of chapters) {
       if (chapter.length > FILE_CONFIG.chunkSize * 3) {
         // Very large chapter - use paragraph splitting first
-        const paragraphs = chapter.split(/\n\s*\n/).filter(p => p.trim().length > 50)
+        const paragraphs = chapter
+          .split(/\n\s*\n/)
+          .filter((p) => p.trim().length > 50)
         let currentChunk = ''
-        
+
         for (const paragraph of paragraphs) {
           if (currentChunk.length + paragraph.length > FILE_CONFIG.chunkSize) {
             if (currentChunk.trim()) {
-              finalChunks.push({ content: currentChunk.trim(), index: chunkIndex++ })
+              finalChunks.push({
+                content: currentChunk.trim(),
+                index: chunkIndex++,
+              })
             }
             currentChunk = paragraph
           } else {
             currentChunk += (currentChunk ? '\n\n' : '') + paragraph
           }
         }
-        
+
         if (currentChunk.trim()) {
-          finalChunks.push({ content: currentChunk.trim(), index: chunkIndex++ })
+          finalChunks.push({
+            content: currentChunk.trim(),
+            index: chunkIndex++,
+          })
         }
       } else {
         finalChunks.push({ content: chapter.trim(), index: chunkIndex++ })
