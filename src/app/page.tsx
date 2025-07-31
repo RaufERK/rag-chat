@@ -48,6 +48,19 @@ export default function Home() {
     setIsLoading(true)
     setError('')
 
+    // 🔥 Сразу показываем вопрос пользователя (временное сообщение)
+    const tempMessageId = Date.now().toString()
+    const tempMessage: Message = {
+      id: tempMessageId,
+      question: currentQuestion,
+      answer: '', // Пустой ответ пока идет загрузка
+      sources: [],
+      hasContext: false,
+      sourcesCount: 0,
+      timestamp: new Date(),
+    }
+    setMessages((prev) => [...prev, tempMessage])
+
     try {
       const response = await fetch('/api/ask', {
         method: 'POST',
@@ -63,8 +76,8 @@ export default function Home() {
 
       const data: AskResponse = await response.json()
 
-      const newMessage: Message = {
-        id: Date.now().toString(),
+      const finalMessage: Message = {
+        id: tempMessageId, // Тот же ID чтобы заменить временное сообщение
         question: currentQuestion,
         answer: data.answer,
         sources: data.sources || [],
@@ -73,14 +86,19 @@ export default function Home() {
         timestamp: new Date(),
       }
 
-      setMessages((prev) => [...prev, newMessage])
+      // Заменяем временное сообщение на полное
+      setMessages((prev) =>
+        prev.map((msg) => (msg.id === tempMessageId ? finalMessage : msg))
+      )
 
       // Автоматически сворачиваем источники для нового сообщения
       if (data.hasContext && data.sources && data.sources.length > 0) {
-        setCollapsedSources((prev) => new Set([...prev, newMessage.id]))
+        setCollapsedSources((prev) => new Set([...prev, tempMessageId]))
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Произошла ошибка')
+      // Удаляем временное сообщение при ошибке
+      setMessages((prev) => prev.filter((msg) => msg.id !== tempMessageId))
     } finally {
       setIsLoading(false)
     }
@@ -178,97 +196,101 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Answer */}
-                <div
-                  className={`rounded-lg p-6 border ${
-                    message.hasContext
-                      ? 'bg-purple-900/70 border-purple-700'
-                      : 'bg-indigo-900/70 border-indigo-700'
-                  }`}
-                >
-                  <div className='flex items-start gap-3 mb-4'>
-                    <div
-                      className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        message.hasContext ? 'bg-purple-600' : 'bg-indigo-600'
-                      }`}
-                    >
-                      <span className='text-white text-sm font-medium'>AI</span>
-                    </div>
-                    <div className='flex-1'>
-                      <div className='flex items-center gap-3 mb-2'>
-                        <h3 className='text-white font-medium'>Ответ:</h3>
-                      </div>
-                      <div className='text-gray-300 leading-relaxed whitespace-pre-wrap'>
-                        {message.answer}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Collapsible Sources */}
-                  {message.hasContext && message.sources.length > 0 && (
-                    <div className='mt-6 pt-6 border-t border-gray-700'>
-                      <button
-                        onClick={() => toggleSourceCollapse(message.id)}
-                        className='flex items-center gap-2 text-white font-medium mb-3 hover:text-blue-300 transition-colors'
+                {/* Answer - показываем только если есть ответ */}
+                {message.answer && (
+                  <div
+                    className={`rounded-lg p-6 border ${
+                      message.hasContext
+                        ? 'bg-purple-900/70 border-purple-700'
+                        : 'bg-indigo-900/70 border-indigo-700'
+                    }`}
+                  >
+                    <div className='flex items-start gap-3 mb-4'>
+                      <div
+                        className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                          message.hasContext ? 'bg-purple-600' : 'bg-indigo-600'
+                        }`}
                       >
-                        <span>Источники ({message.sources.length}):</span>
-                        <svg
-                          className={`w-4 h-4 transition-transform ${
-                            !collapsedSources.has(message.id)
-                              ? 'rotate-180'
-                              : ''
-                          }`}
-                          fill='none'
-                          stroke='currentColor'
-                          viewBox='0 0 24 24'
-                        >
-                          <path
-                            strokeLinecap='round'
-                            strokeLinejoin='round'
-                            strokeWidth={2}
-                            d='M19 9l-7 7-7-7'
-                          />
-                        </svg>
-                      </button>
+                        <span className='text-white text-sm font-medium'>
+                          AI
+                        </span>
+                      </div>
+                      <div className='flex-1'>
+                        <div className='flex items-center gap-3 mb-2'>
+                          <h3 className='text-white font-medium'>Ответ:</h3>
+                        </div>
+                        <div className='text-gray-300 leading-relaxed whitespace-pre-wrap'>
+                          {message.answer}
+                        </div>
+                      </div>
+                    </div>
 
-                      {!collapsedSources.has(message.id) && (
-                        <div className='space-y-3'>
-                          {message.sources.map((source, index) => (
-                            <div
-                              key={source.id}
-                              className='bg-gray-700/90 rounded-lg p-4 border border-gray-600'
-                            >
-                              <div className='flex items-start gap-3'>
-                                <span className='flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium'>
-                                  {index + 1}
-                                </span>
-                                <div className='flex-1'>
-                                  <p className='text-gray-300 text-sm leading-relaxed'>
-                                    {source.content}
-                                  </p>
-                                  {source.metadata && (
-                                    <div className='mt-3 flex gap-2'>
-                                      {source.metadata.category && (
-                                        <span className='px-2 py-1 bg-blue-600/20 text-blue-400 text-xs rounded border border-blue-600/30'>
-                                          {source.metadata.category}
-                                        </span>
-                                      )}
-                                      {source.metadata.topic && (
-                                        <span className='px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded border border-green-600/30'>
-                                          {source.metadata.topic}
-                                        </span>
-                                      )}
-                                    </div>
-                                  )}
+                    {/* Collapsible Sources */}
+                    {message.hasContext && message.sources.length > 0 && (
+                      <div className='mt-6 pt-6 border-t border-gray-700'>
+                        <button
+                          onClick={() => toggleSourceCollapse(message.id)}
+                          className='flex items-center gap-2 text-white font-medium mb-3 hover:text-blue-300 transition-colors'
+                        >
+                          <span>Источники ({message.sources.length}):</span>
+                          <svg
+                            className={`w-4 h-4 transition-transform ${
+                              !collapsedSources.has(message.id)
+                                ? 'rotate-180'
+                                : ''
+                            }`}
+                            fill='none'
+                            stroke='currentColor'
+                            viewBox='0 0 24 24'
+                          >
+                            <path
+                              strokeLinecap='round'
+                              strokeLinejoin='round'
+                              strokeWidth={2}
+                              d='M19 9l-7 7-7-7'
+                            />
+                          </svg>
+                        </button>
+
+                        {!collapsedSources.has(message.id) && (
+                          <div className='space-y-3'>
+                            {message.sources.map((source, index) => (
+                              <div
+                                key={source.id}
+                                className='bg-gray-700/90 rounded-lg p-4 border border-gray-600'
+                              >
+                                <div className='flex items-start gap-3'>
+                                  <span className='flex-shrink-0 w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-sm font-medium'>
+                                    {index + 1}
+                                  </span>
+                                  <div className='flex-1'>
+                                    <p className='text-gray-300 text-sm leading-relaxed'>
+                                      {source.content}
+                                    </p>
+                                    {source.metadata && (
+                                      <div className='mt-3 flex gap-2'>
+                                        {source.metadata.category && (
+                                          <span className='px-2 py-1 bg-blue-600/20 text-blue-400 text-xs rounded border border-blue-600/30'>
+                                            {source.metadata.category}
+                                          </span>
+                                        )}
+                                        {source.metadata.topic && (
+                                          <span className='px-2 py-1 bg-green-600/20 text-green-400 text-xs rounded border border-green-600/30'>
+                                            {source.metadata.topic}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             ))}
 
