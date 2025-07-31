@@ -11,9 +11,9 @@ export const FILE_CONFIG = {
   MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '52428800'), // 50MB
   MAX_FILES_PER_DAY: 100,
   ALLOWED_MIME_TYPES: [
-    // 'application/pdf', // Временно отключено из-за проблем с pdf-parse в Next.js
+    'application/pdf', // ✅ Включён обратно с фиксом динамического импорта
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    // 'text/plain', // ОТКЛЮЧЕНО! Критическая утечка памяти в TXT процессоре
+    'text/plain', // ✅ Включён обратно - простой UTF-8 процессор без утечек памяти
     'application/epub+zip',
     'application/x-fictionbook+xml',
   ],

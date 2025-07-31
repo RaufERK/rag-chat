@@ -153,9 +153,9 @@ export class MultiFormatFileProcessor {
   private chunkByChapters(
     text: string
   ): Array<{ content: string; index: number }> {
-    // Fallback to token-based chunking for very large texts to prevent memory issues
-    if (text.length > 100000) { // 100KB limit
-      console.warn(`⚠️ Large EPUB/FB2 file (${text.length} chars), using token-based chunking to prevent memory issues`)
+    // Fallback to token-based chunking for large texts to prevent OpenAI token limit issues
+    if (text.length > 50000) { // 50KB limit for safety (roughly 12500 tokens)
+      console.warn(`⚠️ Large EPUB/FB2 file (${text.length} chars), using token-based chunking to prevent OpenAI token limit issues`)
       return this.chunkByTokens(text)
     }
 

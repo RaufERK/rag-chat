@@ -305,8 +305,8 @@ export class DOCProcessor implements DocumentProcessor {
  */
 export class DocumentProcessorFactory {
   private processors: DocumentProcessor[] = [
-    // new PDFProcessor(), // Временно отключено из-за проблем с pdf-parse в Next.js
-    // new TXTProcessor(), // КРИТИЧНО! Отключено из-за утечки памяти
+    new PDFProcessor(), // ✅ Включён обратно с фиксом динамического импорта
+    new TXTProcessor(), // ✅ Включён обратно - простой UTF-8 декодинг
     new FB2Processor(),
     new EPUBProcessor(),
     new DOCXProcessor(),
