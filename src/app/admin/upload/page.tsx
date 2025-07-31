@@ -23,9 +23,12 @@ export default function UploadPage() {
   const validateFile = (file: File): string | null => {
     const maxSize = 50 * 1024 * 1024 // 50MB
     const allowedTypes = [
-      'application/pdf',
-      'text/plain',
+      'application/pdf', // ⚠️ Временно отключён в бэкенде из-за проблем с pdf-parse
+      'text/plain', // ⚠️ Временно отключён в бэкенде из-за утечки памяти
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/epub+zip',
+      'application/x-fictionbook+xml',
+      'text/xml', // Дополнительный MIME type для FB2
     ]
 
     if (file.size > maxSize) {
@@ -33,7 +36,7 @@ export default function UploadPage() {
     }
 
     if (!allowedTypes.includes(file.type)) {
-      return 'Неподдерживаемый тип файла'
+      return 'Неподдерживаемый тип файла. Поддерживаются: PDF⚠️, TXT⚠️, DOCX✅, EPUB✅, FB2✅ (⚠️ = временно с проблемами)'
     }
 
     return null
@@ -214,13 +217,15 @@ export default function UploadPage() {
               Перетащите файлы сюда или нажмите для выбора
             </p>
             <p className='text-gray-400 mt-2'>
-              Поддерживаются: PDF, TXT, DOCX (максимум 50MB)
+              Поддерживаются: PDF⚠️, TXT⚠️, DOCX✅, EPUB✅, FB2✅ (максимум 50MB)
+              <br />
+              <span className='text-yellow-400 text-sm'>⚠️ = временно с техническими проблемами</span>
             </p>
           </div>
           <input
             type='file'
             multiple
-            accept='.pdf,.txt,.docx'
+            accept='.pdf,.txt,.docx,.epub,.fb2'
             onChange={handleFileInput}
             className='hidden'
             id='file-input'
@@ -262,7 +267,19 @@ export default function UploadPage() {
                   <div className='flex-1'>
                     <div className='flex items-center space-x-3'>
                       <span className='text-2xl'>
-                        {fileData.file.type === 'application/pdf' ? '📄' : '📝'}
+                        {fileData.file.type === 'application/pdf'
+                          ? '📄⚠️'
+                          : fileData.file.type === 'text/plain'
+                          ? '📝⚠️'
+                          : fileData.file.type ===
+                            'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                          ? '📄'
+                          : fileData.file.type === 'application/epub+zip'
+                          ? '📚'
+                          : fileData.file.type ===
+                            'application/x-fictionbook+xml'
+                          ? '📖'
+                          : '📝'}
                       </span>
                       <div className='flex-1'>
                         <p className='text-white font-medium'>

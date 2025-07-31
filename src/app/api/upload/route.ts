@@ -1,33 +1,36 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile } from 'fs/promises'
+import { writeFile, rm, mkdir } from 'fs/promises'
 import { join } from 'path'
-import { createHash } from 'crypto'
-import { FileUtils } from '@/lib/file-utils'
-import { FileProcessor } from '@/lib/file-processor'
-import { FileRepository } from '@/lib/file-repository'
-import { TextSplitter } from '@/lib/text-splitter'
-import { getEmbedding } from '@/lib/openai'
-import { upsertPoints } from '@/lib/qdrant'
 import { randomUUID } from 'crypto'
+import { FileUtils } from '@/lib/file-utils'
+import {
+  processMultiFormatFile,
+  MultiFormatFileProcessor,
+} from '@/lib/file-processor-v2'
+import { FileRepository } from '@/lib/file-repository'
+import { getEmbeddingVectors } from '@/lib/langchain/embeddings'
+import { addDocuments } from '@/lib/langchain/vectorstore'
+import { Document } from '@langchain/core/documents'
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('[UPLOAD] Получен запрос на загрузку файла')
+    console.log('📤 [MULTI-FORMAT UPLOAD] Processing file upload request')
     const formData = await request.formData()
     const file = formData.get('file') as File
 
     if (!file) {
-      console.log('[UPLOAD] Файл не найден в formData')
+      console.log('❌ [UPLOAD] No file found in formData')
       return NextResponse.json(
-        { step: 'file_check', error: 'Файл не найден' },
+        { step: 'file_check', error: 'No file provided' },
         { status: 400 }
       )
     }
+
     console.log(
-      `[UPLOAD] Получен файл: name=${file.name}, size=${file.size}, type=${file.type}`
+      `📁 [UPLOAD] Received file: ${file.name} (${file.size} bytes, ${file.type})`
     )
 
-    // Валидация файла
+    // Enhanced validation with multi-format support
     const validation = FileUtils.validateFile({
       size: file.size,
       mimetype: file.type,
@@ -35,150 +38,232 @@ export async function POST(request: NextRequest) {
     })
 
     if (!validation.valid) {
-      console.log(`[UPLOAD] Ошибка валидации: ${validation.error}`)
+      console.log(`❌ [UPLOAD] Validation failed: ${validation.error}`)
       return NextResponse.json(
         { step: 'validation', error: validation.error },
         { status: 400 }
       )
     }
 
-    // Проверяем поддержку типа файла
-    if (!FileProcessor.isSupportedFileType(file.type)) {
-      console.log(`[UPLOAD] Неподдерживаемый тип файла: ${file.type}`)
+    // Check if file format is supported by new multi-format system
+    if (!MultiFormatFileProcessor.isFormatSupported(file.name, file.type)) {
+      const supportedFormats = MultiFormatFileProcessor.getSupportedFormats()
+      console.log(`❌ [UPLOAD] Unsupported file format: ${file.name}`)
       return NextResponse.json(
-        { step: 'type_check', error: 'Неподдерживаемый тип файла' },
+        {
+          step: 'format_check',
+          error: `Unsupported file format. Supported formats: ${supportedFormats.extensions.join(
+            ', '
+          )}`,
+        },
         { status: 400 }
       )
     }
 
-    // Читаем содержимое файла
+    console.log('✅ [UPLOAD] File format supported by multi-format processor')
+
+    // Create temporary directory for processing
+    const processId = randomUUID()
+    const uploadDir = join(
+      process.cwd(),
+      'uploads',
+      'temp',
+      'processing',
+      processId
+    )
+    const filePath = join(uploadDir, file.name)
+
+    // Create processing directory
+    await mkdir(uploadDir, { recursive: true })
+    console.log(`📁 [UPLOAD] Created temporary directory: ${uploadDir}`)
+
+    // Save file to temporary location
     const bytes = await file.arrayBuffer()
     const buffer = Buffer.from(bytes)
-    console.log(`[UPLOAD] Прочитано ${buffer.length} байт из файла`)
+    await writeFile(filePath, buffer)
+    console.log(`💾 [UPLOAD] File saved to: ${filePath}`)
 
-    // Создаем временную папку
-    const tempFolder = await FileUtils.createTempFolder()
-    const tempFilePath = join(tempFolder, file.name)
-    console.log(`[UPLOAD] Временный путь для файла: ${tempFilePath}`)
-
-    // Сохраняем файл во временную папку
-    await writeFile(tempFilePath, buffer)
-    console.log(`[UPLOAD] Файл сохранен во временную папку: ${tempFilePath}`)
-
-    // Вычисляем хеш файла
-    const fileHash = createHash('md5').update(buffer).digest('hex')
-    console.log(`[UPLOAD] Хеш файла: ${fileHash}`)
-
-    // Проверяем, не загружен ли уже такой файл
-    const existingFile = await FileRepository.findByHash(fileHash)
-    if (existingFile) {
-      console.log(
-        `[UPLOAD] Файл с таким хешем уже существует: id=${existingFile.id}`
-      )
-      return NextResponse.json(
-        { step: 'hash_check', error: 'Файл уже загружен' },
-        { status: 409 }
-      )
-    }
-
-    // Обрабатываем файл
+    let processedFile
     try {
-      console.log(`[UPLOAD] Начинаем обработку файла: ${tempFilePath}`)
-      const processedFile = await FileProcessor.processFile(
-        tempFilePath,
+      // Process file with new multi-format system
+      console.log(
+        '🔄 [MULTI-FORMAT] Processing file with enhanced processor...'
+      )
+      processedFile = await processMultiFormatFile(
+        filePath,
+        file.name,
         file.type
       )
+
       console.log(
-        `[UPLOAD] Файл обработан. Метаданные:`,
-        processedFile.metadata
+        `✅ [MULTI-FORMAT] File processed successfully:
+        - Format: ${processedFile.metadata.format}
+        - Processor: ${processedFile.metadata.processor}
+        - Chunks: ${processedFile.chunks.length}
+        - Hash: ${processedFile.hash.substring(0, 8)}...`
       )
-      // Создаем запись в базе данных
-      const fileId = await FileRepository.createFile({
-        filename: file.name,
-        original_name: file.name,
-        file_hash: fileHash,
-        file_size: file.size,
-        mime_type: file.type,
-        metadata: processedFile.metadata,
-      })
-      console.log(`[UPLOAD] Запись о файле создана в базе данных: id=${fileId}`)
-      // Обновляем статус на "processing"
-      await FileRepository.updateStatus(fileId, 'processing')
-      // Разбиваем на чанки
-      const chunks = TextSplitter.smartSplit(processedFile.text)
-      console.log(`[UPLOAD] Файл разбит на ${chunks.length} чанков`)
-      // Обновляем количество чанков
-      await FileRepository.updateChunksCount(fileId, chunks.length)
-      // Создаем эмбеддинги и сохраняем в Qdrant
-      const qdrantPoints: any[] = []
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i]
-        try {
-          const embedding = await getEmbedding(chunk.content)
-          qdrantPoints.push({
-            id: randomUUID(),
-            vector: embedding,
-            payload: {
-              content: chunk.content,
-              metadata: {
-                file_id: fileId,
-                file_name: file.name,
-                chunk_index: i,
-                ...processedFile.metadata,
-              },
+
+      // Check for duplicates using file hash
+      try {
+        const existingFile = await FileRepository.findByHash(processedFile.hash)
+        if (existingFile) {
+          console.log('⚠️ [UPLOAD] Duplicate file detected, cleaning up...')
+          await rm(uploadDir, { recursive: true, force: true })
+
+          return NextResponse.json({
+            success: true,
+            step: 'duplicate_check',
+            message: 'File was already uploaded previously',
+            isDuplicate: true,
+            fileInfo: {
+              name: file.name,
+              hash: processedFile.hash,
+              format: processedFile.metadata.format,
+              existingData: existingFile,
             },
           })
-        } catch (error) {
-          console.error(
-            `[UPLOAD] Ошибка создания эмбеддинга для чанка ${i}:`,
-            error
-          )
         }
+      } catch (dbError) {
+        console.log(
+          '⚠️ [UPLOAD] Database error during duplicate check:',
+          dbError
+        )
+        // Continue processing even if DB is unavailable
       }
-      if (qdrantPoints.length > 0) {
-        try {
-          await upsertPoints(qdrantPoints)
-          console.log(
-            `[UPLOAD] ${qdrantPoints.length} точек успешно сохранены в Qdrant`
-          )
-          const pointIds = qdrantPoints.map((p) => p.id)
-          await FileRepository.updateQdrantPoints(fileId, pointIds)
-          console.log(`[UPLOAD] ID точек обновлены в базе данных`)
-        } catch (error) {
-          console.error(`[UPLOAD] Ошибка сохранения точек в Qdrant:`, error)
-        }
-      } else {
-        console.log(`[UPLOAD] Нет точек для сохранения в Qdrant`)
-      }
-      // Перемещаем файл в финальную папку
-      const finalPath = FileUtils.getFilePath(file.name)
-      await FileUtils.moveToFinalLocation(tempFilePath, finalPath)
-      console.log(`[UPLOAD] Файл перемещен в финальную папку: ${finalPath}`)
-      return NextResponse.json(
-        {
-          step: 'success',
-          fileId,
-          fileName: file.name,
-          meta: processedFile.metadata,
-          chunks: chunks.length,
-        },
-        { status: 200 }
+
+      console.log('🚀 [UPLOAD] Processing new file - no duplicates found')
+      // Create LangChain Documents from chunks for vector storage
+      console.log('📄 [LANGCHAIN] Creating LangChain documents from chunks...')
+      const documents = processedFile.chunks.map((chunk, index) => {
+        return new Document({
+          pageContent: chunk.content,
+          metadata: {
+            chunkIndex: index,
+            fileName: file.name,
+            fileHash: processedFile.hash,
+            format: processedFile.metadata.format,
+            processor: processedFile.metadata.processor,
+            uploadDate: new Date().toISOString(),
+            ...processedFile.metadata,
+          },
+        })
+      })
+
+      console.log(
+        `📊 [LANGCHAIN] Created ${documents.length} LangChain documents`
       )
-    } catch (error) {
-      console.error('[UPLOAD] Ошибка обработки файла:', error)
+
+      // Add documents to vector store using LangChain
+      let vectorIds: string[] = []
+      try {
+        console.log('🔗 [QDRANT] Adding documents to vector store...')
+        vectorIds = await addDocuments(documents)
+        console.log(
+          `✅ [QDRANT] Successfully added ${
+            vectorIds?.length || 0
+          } vectors to Qdrant`
+        )
+      } catch (qdrantError) {
+        console.error(
+          '❌ [QDRANT] Error adding documents to vector store:',
+          qdrantError
+        )
+        vectorIds = [] // Устанавливаем пустой массив при ошибке
+        // Continue execution - we can still save file metadata
+      }
+
+      // Save file record to database
+      try {
+        const fileId = await FileRepository.createFile({
+          filename: file.name,
+          original_name: file.name,
+          file_hash: processedFile.hash, // Use proper hash from processor
+          file_size: file.size,
+          mime_type: file.type || 'application/octet-stream',
+          metadata: {
+            ...processedFile.metadata,
+            vectorIds:
+              vectorIds && vectorIds.length > 0 ? vectorIds : undefined,
+            chunksCount: processedFile.chunks.length,
+          },
+        })
+        console.log(`💾 [DATABASE] File record created with ID: ${fileId}`)
+
+        // Update status to completed
+        await FileRepository.updateStatus(fileId, 'completed')
+        console.log(`✅ [DATABASE] File processing status updated to completed`)
+      } catch (dbError) {
+        console.error('❌ [DATABASE] Error saving file record:', dbError)
+        // Continue - vector data is already saved
+      }
+
+      // Clean up temporary files
+      try {
+        await rm(uploadDir, { recursive: true, force: true })
+        console.log('🧹 [CLEANUP] Temporary files removed successfully')
+      } catch (cleanupError) {
+        console.warn(
+          '⚠️ [CLEANUP] Error removing temporary files:',
+          cleanupError
+        )
+        // Not critical, continue
+      }
+
+      // Return success response
+      return NextResponse.json({
+        success: true,
+        step: 'completed',
+        message: 'File processed and uploaded successfully',
+        fileInfo: {
+          name: file.name,
+          hash: processedFile.hash,
+          format: processedFile.metadata.format,
+          processor: processedFile.metadata.processor,
+          size: file.size,
+          chunks: processedFile.chunks.length,
+          vectorsCreated: vectorIds?.length || 0,
+          title: processedFile.metadata.title,
+        },
+      })
+    } catch (processingError) {
+      console.error('❌ [PROCESSING] File processing failed:', processingError)
+
+      // Clean up temporary files on error
+      try {
+        await rm(uploadDir, { recursive: true, force: true })
+        console.log('🧹 [CLEANUP] Temporary files cleaned up after error')
+      } catch (cleanupError) {
+        console.warn(
+          '⚠️ [CLEANUP] Failed to clean up temporary files:',
+          cleanupError
+        )
+      }
+
       return NextResponse.json(
         {
-          step: 'processing',
-          error: error instanceof Error ? error.message : error,
+          success: false,
+          step: 'processing_error',
+          error: 'File processing failed',
+          details:
+            processingError instanceof Error
+              ? processingError.message
+              : String(processingError),
+          supportedFormats:
+            MultiFormatFileProcessor.getSupportedFormats().extensions,
         },
         { status: 500 }
       )
     }
   } catch (error) {
-    console.error('Ошибка загрузки файла:', error)
+    console.error('❌ [UPLOAD] General upload error:', error)
 
     return NextResponse.json(
-      { error: 'Ошибка обработки файла' },
+      {
+        success: false,
+        step: 'general_error',
+        error: 'Internal server error during file upload',
+        details: error instanceof Error ? error.message : String(error),
+      },
       { status: 500 }
     )
   }
