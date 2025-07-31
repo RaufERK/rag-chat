@@ -11,11 +11,16 @@
     "init-db": "tsx scripts/init-db.ts"
   },
   "dependencies": {
+    "@langchain/community": "^0.3.49",
+    "@langchain/core": "^0.3.66",
+    "@langchain/openai": "^0.6.3",
+    "@langchain/qdrant": "^0.1.2",
     "@qdrant/js-client-rest": "^1.15.0",
     "@types/multer": "^2.0.0",
     "@types/sqlite3": "^3.1.11",
     "@types/uuid": "^10.0.0",
     "dotenv": "^17.2.0",
+    "langchain": "^0.3.30",
     "multer": "^2.0.2",
     "next": "15.4.3",
     "next-auth": "^5.0.0-beta.29",
