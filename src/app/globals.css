@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
   --background: #ffffff;
@@ -10,6 +10,41 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+}
+
+/* 🌀 Медленное вращение фона для медитативного эффекта */
+@keyframes slow-spin {
+  from {
+    transform: rotate(0deg) scale(2);
+  }
+  to {
+    transform: rotate(360deg) scale(2);
+  }
+}
+
+.animate-slow-spin {
+  animation: slow-spin 120s linear infinite;
+  /* Дополнительная оптимизация для плавности */
+  will-change: transform;
+  transform-origin: center center;
+}
+
+/* 🌊 Медленный и плавный скролл для чата */
+.ultra-smooth-scroll {
+  scroll-behavior: smooth;
+  scroll-padding: 20px;
+}
+
+/* Глобальная плавность */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Медленный скролл только для автоскролла */
+@media (prefers-reduced-motion: no-preference) {
+  .ultra-smooth-scroll {
+    scroll-behavior: smooth;
+  }
 }
 
 @media (prefers-color-scheme: dark) {

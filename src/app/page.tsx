@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { AskResponse, Document } from '@/lib/types'
 
 interface Message {
@@ -21,6 +21,22 @@ export default function Home() {
   const [collapsedSources, setCollapsedSources] = useState<Set<string>>(
     new Set() // По умолчанию все источники свёрнуты
   )
+
+  // Ref для автоматического скролла к последнему сообщению
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  // Простой и надежный автоскролл - к концу placeholder при любых изменениях
+  useEffect(() => {
+    if (messages.length > 0 || isLoading) {
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'end', // Всегда к концу - включая placeholder
+          inline: 'nearest',
+        })
+      }, 200)
+    }
+  }, [messages.length, isLoading])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,29 +100,30 @@ export default function Home() {
 
   return (
     <div className='min-h-screen bg-gray-900/60 flex flex-col relative z-10'>
-      {/* Header */}
-      <header className='border-b border-gray-700 bg-indigo-900'>
-        <div className='max-w-4xl mx-auto px-4 py-4'>
-          <h1 className='text-xl font-semibold text-white'>🤖 RAG Chat</h1>
-        </div>
-      </header>
-
-      {/* Main Content */}
-      <main className='flex-1 flex flex-col'>
-        {/* Messages Area */}
-        <div className='flex-1 overflow-y-auto px-4 py-8'>
+      {/* Main Content - Четкое разделение пространств */}
+      <main
+        className='flex-1 flex flex-col'
+        style={{
+          paddingBottom:
+            messages.length > 0 || isLoading || error ? '100px' : '0px',
+        }}
+      >
+        {/* Messages Area - Чистый поток без хаков */}
+        <div className='flex-1 overflow-y-auto px-4 py-8 ultra-smooth-scroll'>
           <div className='max-w-4xl mx-auto space-y-6'>
             {/* Welcome Message with Centered Input */}
             {messages.length === 0 && !isLoading && !error && (
-              <div className='flex flex-col items-center justify-center min-h-[60vh]'>
+              <div className='flex flex-col items-center justify-center min-h-[80vh]'>
                 <div className='text-center mb-12'>
-                  <div className='text-6xl mb-6'>🤖</div>
-                  <h2 className='text-2xl font-semibold text-white mb-4'>
-                    Добро пожаловать в RAG Chat
-                  </h2>
-                  <p className='text-gray-400 text-lg max-w-2xl mx-auto'>
-                    Задайте вопрос, и я найду релевантную информацию в базе
-                    знаний, чтобы дать вам точный и обоснованный ответ.
+                  <p className='text-gray-300 text-base max-w-3xl mx-auto leading-relaxed'>
+                    Этот Чат помогает находить ответы, опираясь на Учения
+                    Вознесённых Владык <br />
+                    и духовную науку Новой Эпохи.
+                    <br />
+                    <br />
+                    Задайте вопрос — и я подберу для вас наиболее созвучную
+                    информацию <br />
+                    из нашей базы знаний.
                   </p>
                 </div>
 
@@ -262,7 +279,7 @@ export default function Home() {
               </div>
             )}
 
-            {/* Loading */}
+            {/* Loading with AI icon */}
             {isLoading && (
               <div className='bg-gray-800/90 rounded-lg p-6 border border-gray-700'>
                 <div className='flex items-start gap-3'>
@@ -271,59 +288,68 @@ export default function Home() {
                   </div>
                   <div className='flex-1'>
                     <div className='flex items-center gap-2 text-gray-300'>
-                      <div className='w-4 h-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin'></div>
+                      <div className='w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin'></div>
                       Ищу информацию и генерирую ответ...
                     </div>
                   </div>
                 </div>
               </div>
             )}
+
+            {/* 📌 Placeholder для предотвращения скрытия под панелью ввода */}
+            {(isLoading ||
+              (messages.length > 0 && messages[messages.length - 1])) && (
+              <div className='h-24'></div>
+            )}
+
+            {/* 🎯 Элемент для автоскролла - ПОСЛЕ всего контента включая placeholder */}
+            <div ref={messagesEndRef} />
           </div>
         </div>
-
-        {/* Input Area - Always show when there are messages or loading */}
-        {(messages.length > 0 || isLoading || error) && (
-          <div className='border-t border-gray-700 bg-indigo-900 p-4'>
-            <div className='max-w-4xl mx-auto'>
-              <form onSubmit={handleSubmit} className='relative'>
-                <div className='relative'>
-                  <input
-                    type='text'
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    placeholder='Задайте ваш вопрос...'
-                    className='w-full px-4 py-3 pr-12 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-white placeholder-gray-400'
-                    disabled={isLoading}
-                  />
-                  <button
-                    type='submit'
-                    disabled={isLoading || !question.trim()}
-                    className='absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors'
-                  >
-                    {isLoading ? (
-                      <div className='w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin'></div>
-                    ) : (
-                      <svg
-                        className='w-4 h-4'
-                        fill='none'
-                        stroke='currentColor'
-                        viewBox='0 0 24 24'
-                      >
-                        <path
-                          strokeLinecap='round'
-                          strokeLinejoin='round'
-                          strokeWidth={2}
-                          d='M12 19l9 2-9-18-9 18 9-2zm0 0v-8'
-                        />
-                      </svg>
-                    )}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
       </main>
+
+      {/* 📌 Фиксированная панель ввода - всегда внизу экрана */}
+      {(messages.length > 0 || isLoading || error) && (
+        <div className='fixed bottom-0 left-0 right-0 border-t border-gray-700 bg-indigo-900/95 backdrop-blur-sm p-4 z-20'>
+          <div className='max-w-4xl mx-auto'>
+            <form onSubmit={handleSubmit} className='relative'>
+              <div className='relative'>
+                <input
+                  type='text'
+                  value={question}
+                  onChange={(e) => setQuestion(e.target.value)}
+                  placeholder='Задайте ваш вопрос...'
+                  className='w-full px-4 py-3 pr-12 bg-gray-700 border border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none text-white placeholder-gray-400'
+                  disabled={isLoading}
+                />
+                <button
+                  type='submit'
+                  disabled={isLoading || !question.trim()}
+                  className='absolute right-2 top-1/2 transform -translate-y-1/2 p-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:bg-gray-600 disabled:cursor-not-allowed transition-colors'
+                >
+                  {isLoading ? (
+                    <div className='w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin'></div>
+                  ) : (
+                    <svg
+                      className='w-4 h-4'
+                      fill='none'
+                      stroke='currentColor'
+                      viewBox='0 0 24 24'
+                    >
+                      <path
+                        strokeLinecap='round'
+                        strokeLinejoin='round'
+                        strokeWidth={2}
+                        d='M12 19l9 2-9-18-9 18 9-2zm0 0v-8'
+                      />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
