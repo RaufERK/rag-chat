@@ -24,7 +24,7 @@ export default function UploadPage() {
     const maxSize = 50 * 1024 * 1024 // 50MB
     const allowedTypes = [
       'application/pdf', // ⚠️ Может крашиться на некоторых PDF
-      'text/plain', // ✅ Работает нормально  
+      'text/plain', // ✅ Работает нормально
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
       'application/epub+zip',
       'application/x-fictionbook+xml',
@@ -218,9 +218,12 @@ export default function UploadPage() {
               Перетащите файлы сюда или нажмите для выбора
             </p>
             <p className='text-gray-400 mt-2'>
-              Поддерживаются: PDF⚠️, TXT✅, DOCX✅, EPUB✅, FB2✅, DOC⚠️ (максимум 50MB)
+              Поддерживаются: PDF⚠️, TXT✅, DOCX✅, EPUB✅, FB2✅, DOC⚠️
+              (максимум 50MB)
               <br />
-              <span className='text-yellow-400 text-sm'>⚠️ PDF и DOC могут иметь проблемы с некоторыми файлами</span>
+              <span className='text-yellow-400 text-sm'>
+                ⚠️ PDF и DOC могут иметь проблемы с некоторыми файлами
+              </span>
             </p>
           </div>
           <input

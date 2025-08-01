@@ -2,7 +2,8 @@ import path from 'path'
 import fs from 'fs/promises'
 // Полностью динамический импорт pdf-parse для избежания проблем с Next.js
 import xml2js from 'xml2js'
-import EPub from 'epub2'
+// Временно отключаем epub2 из-за проблем с zipfile модулем
+// import EPub from 'epub2'
 import mammoth from 'mammoth'
 // import textract from 'textract' // Временно отключено из-за проблем с Next.js
 
@@ -19,7 +20,7 @@ export interface DocumentProcessor {
 
 /**
  * PDF Document Processor
- * Uses pdf-parse for text extraction
+ * Uses pdf-parse for text extraction with enhanced error handling
  */
 export class PDFProcessor implements DocumentProcessor {
   supportedMimeTypes = ['application/pdf']
@@ -27,36 +28,80 @@ export class PDFProcessor implements DocumentProcessor {
 
   async extractText(filePath: string, buffer: Buffer): Promise<string> {
     try {
-      // Полностью динамический импорт без кэширования для избежания проблем с Next.js
-      const pdfParse = (await import('pdf-parse')).default
-      
-      // Добавляем опции для более надежного парсинга
+      console.log(`📄 [PDF] Starting PDF processing for: ${filePath}`)
+
+      // Validate PDF header
+      if (!this.validateFile(buffer)) {
+        throw new Error('Invalid PDF file: missing PDF header')
+      }
+
+      // Dynamic import with error handling
+      let pdfParse
+      try {
+        pdfParse = (await import('pdf-parse')).default
+      } catch (importError) {
+        console.error('❌ [PDF] Failed to import pdf-parse:', importError)
+        throw new Error('PDF parsing library not available')
+      }
+
+      // Enhanced options for stability
       const options = {
-        max: 50, // ограничиваем количество страниц для стабильности
-        version: 'v1.10.100' // используем стабильную версию парсера
-      };
-      
+        max: 100, // Increased page limit
+        version: 'v1.10.100',
+        normalizeWhitespace: true,
+        disableCombineTextItems: false,
+      }
+
+      console.log(`📄 [PDF] Parsing PDF with ${buffer.length} bytes...`)
       const pdfData = await pdfParse(buffer, options)
-      
+
       if (!pdfData || !pdfData.text) {
         throw new Error('PDF parsing returned empty result')
       }
-      
-      const text = pdfData.text.trim()
+
+      let text = pdfData.text.trim()
+
+      // Enhanced text cleaning
+      text = this.cleanExtractedText(text)
+
       if (text.length === 0) {
-        throw new Error('PDF contains no readable text')
+        throw new Error('PDF contains no readable text after processing')
       }
-      
+
+      console.log(`✅ [PDF] Successfully extracted ${text.length} characters`)
       return text
     } catch (error) {
-      console.error('PDF parsing error details:', error)
-      throw new Error(`PDF parsing failed: ${error.message}. This PDF might be corrupted, password-protected, or contain only images.`)
+      console.error('❌ [PDF] Processing error:', error)
+
+      // Provide more specific error messages
+      if (error.message.includes('password')) {
+        throw new Error('PDF is password-protected and cannot be processed')
+      } else if (error.message.includes('corrupted')) {
+        throw new Error('PDF file appears to be corrupted or damaged')
+      } else if (error.message.includes('images')) {
+        throw new Error('PDF contains only images - no text content available')
+      } else {
+        throw new Error(`PDF processing failed: ${error.message}`)
+      }
     }
   }
 
+  private cleanExtractedText(text: string): string {
+    return text
+      .replace(/\s+/g, ' ') // Normalize whitespace
+      .replace(/\n\s*\n/g, '\n') // Remove empty lines
+      .replace(/[^\w\sа-яёА-ЯЁ.,!?;:()\[\]{}"'\-–—…]/g, '') // Keep only readable characters
+      .trim()
+  }
+
   validateFile(buffer: Buffer): boolean {
-    // PDF files start with %PDF
-    return buffer.subarray(0, 4).toString() === '%PDF'
+    try {
+      // Check PDF header
+      const header = buffer.subarray(0, 8).toString('ascii')
+      return header.startsWith('%PDF')
+    } catch {
+      return false
+    }
   }
 }
 
@@ -207,55 +252,58 @@ export class EPUBProcessor implements DocumentProcessor {
   async extractText(filePath: string, buffer: Buffer): Promise<string> {
     return new Promise((resolve, reject) => {
       try {
-        const epub = new EPub(filePath)
+        // const epub = new EPub(filePath) // This line was removed as per the edit hint
 
-        epub.on('end', () => {
-          try {
-            const chapters = epub.flow.map((chapter) => chapter.id)
-            let fullText = ''
-            let processedChapters = 0
+        // epub.on('end', () => { // This block was removed as per the edit hint
+        //   try {
+        //     const chapters = epub.flow.map((chapter) => chapter.id)
+        //     let fullText = ''
+        //     let processedChapters = 0
 
-            if (chapters.length === 0) {
-              resolve('')
-              return
-            }
+        //     if (chapters.length === 0) {
+        //       resolve('')
+        //       return
+        //     }
 
-            chapters.forEach((chapterId) => {
-              epub.getChapter(chapterId, (error, text) => {
-                if (error) {
-                  console.warn(`Failed to extract chapter ${chapterId}:`, error)
-                  text = '' // Continue with empty text for this chapter
-                }
+        //     chapters.forEach((chapterId) => {
+        //       epub.getChapter(chapterId, (error, text) => {
+        //         if (error) {
+        //           console.warn(`Failed to extract chapter ${chapterId}:`, error)
+        //           text = '' // Continue with empty text for this chapter
+        //         }
 
-                if (text) {
-                  // Remove HTML tags and clean up
-                  const cleanText = text
-                    .replace(/<[^>]*>/g, '')
-                    .replace(/\s+/g, ' ')
-                    .replace(/\n\s*\n/g, '\n\n')
-                    .trim()
+        //         if (text) {
+        //           // Remove HTML tags and clean up
+        //           const cleanText = text
+        //             .replace(/<[^>]*>/g, '')
+        //             .replace(/\s+/g, ' ')
+        //             .replace(/\n\s*\n/g, '\n\n')
+        //             .trim()
 
-                  if (cleanText) {
-                    fullText += cleanText + '\n\n'
-                  }
-                }
+        //           if (cleanText) {
+        //             fullText += cleanText + '\n\n'
+        //           }
+        //         }
 
-                processedChapters++
-                if (processedChapters === chapters.length) {
-                  resolve(fullText.trim())
-                }
-              })
-            })
-          } catch (error) {
-            reject(new Error(`EPUB processing failed: ${error.message}`))
-          }
-        })
+        //         processedChapters++
+        //         if (processedChapters === chapters.length) {
+        //           resolve(fullText.trim())
+        //         }
+        //       })
+        //     })
+        //   } catch (error) {
+        //     reject(new Error(`EPUB processing failed: ${error.message}`))
+        //   }
+        // })
 
-        epub.on('error', (error) => {
-          reject(new Error(`EPUB parsing failed: ${error.message}`))
-        })
+        // epub.on('error', (error) => { // This block was removed as per the edit hint
+        //   reject(new Error(`EPUB parsing failed: ${error.message}`))
+        // })
 
-        epub.parse()
+        // epub.parse() // This line was removed as per the edit hint
+        reject(
+          new Error('EPUB processing temporarily disabled due to module issues')
+        )
       } catch (error) {
         reject(new Error(`EPUB initialization failed: ${error.message}`))
       }

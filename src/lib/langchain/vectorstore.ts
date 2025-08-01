@@ -1,5 +1,6 @@
 import { QdrantVectorStore } from '@langchain/qdrant'
-import { embeddings } from './embeddings'
+import { getEmbeddingVectors } from './embeddings'
+import { randomUUID } from 'crypto'
 
 /**
  * Lazy-loaded Qdrant Vector Store
@@ -19,10 +20,22 @@ export function getVectorStore(): QdrantVectorStore {
       throw new Error('QDRANT_API_KEY environment variable is not set')
     }
 
-    vectorStoreInstance = new QdrantVectorStore(embeddings, {
+    // Create a custom embeddings object that uses our direct OpenAI implementation
+    const customEmbeddings = {
+      embedQuery: async (text: string) => {
+        const { getEmbeddingVector } = await import('./embeddings')
+        return getEmbeddingVector(text)
+      },
+      embedDocuments: async (texts: string[]) => {
+        return getEmbeddingVectors(texts)
+      },
+    }
+
+    vectorStoreInstance = new QdrantVectorStore(customEmbeddings, {
       url: process.env.QDRANT_URL,
       apiKey: process.env.QDRANT_API_KEY,
-      collectionName: process.env.QDRANT_COLLECTION_NAME || 'rag-chat-collection',
+      collectionName:
+        process.env.QDRANT_COLLECTION_NAME || 'rag-chat-collection',
       collectionConfig: {
         vectors: {
           size: 1536, // OpenAI ada-002 embedding dimension
@@ -72,31 +85,62 @@ export async function searchSimilarDocuments(
  */
 export async function addDocuments(documents: any[]) {
   try {
+    console.log(`🔗 [QDRANT] Starting to add ${documents.length} documents...`)
     const vectorStore = getVectorStore()
-    const ids = await vectorStore.addDocuments(documents)
-    console.log(`✅ Added ${documents.length} documents to vector store`)
-    return ids
+
+    console.log(`🔗 [QDRANT] Vector store initialized, adding documents...`)
+
+    // Generate our own IDs since LangChain Qdrant doesn't return them
+    const generatedIds = documents.map(() => randomUUID())
+
+    // Add IDs to documents metadata
+    const documentsWithIds = documents.map((doc, index) => ({
+      ...doc,
+      metadata: {
+        ...doc.metadata,
+        id: generatedIds[index],
+      },
+    }))
+
+    await vectorStore.addDocuments(documentsWithIds)
+
+    console.log(
+      `✅ [QDRANT] Added ${documents.length} documents to vector store`
+    )
+    console.log(`🔍 [QDRANT] Generated IDs:`, generatedIds)
+
+    return generatedIds
   } catch (error) {
-    console.error('❌ Error adding documents:', error)
+    console.error('❌ [QDRANT] Error adding documents:', error)
+    console.error('❌ [QDRANT] Error details:', error.message)
+    console.error('❌ [QDRANT] Error stack:', error.stack)
     throw new Error(`Failed to add documents: ${error.message}`)
   }
 }
+
+import { RAGSettings } from '@/lib/settings-service'
 
 /**
  * Create retriever instance for RAG chains
  * @param options - Retrieval options
  * @returns VectorStoreRetriever instance
  */
-export function createRetriever(
+export async function createRetriever(
   options: {
     k?: number
     scoreThreshold?: number
   } = {}
 ) {
   const vectorStore = getVectorStore()
+
+  // Use database settings if not provided
+  const k = options.k ?? (await RAGSettings.getRetrievalK())
+  const scoreThreshold =
+    options.scoreThreshold ?? (await RAGSettings.getScoreThreshold())
+
   return vectorStore.asRetriever({
-    k: options.k || 8,
-    scoreThreshold: options.scoreThreshold || 0.3,
+    k,
+    scoreThreshold,
     searchType: 'similarity_score_threshold',
   })
 }

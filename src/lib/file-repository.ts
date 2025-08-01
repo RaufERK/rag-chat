@@ -14,12 +14,14 @@ export class FileRepository {
     const db = await getDatabase()
     const id = randomUUID()
 
-    await db.run(`
+    db.prepare(
+      `
       INSERT INTO files (
         id, filename, original_name, file_hash, file_size, 
         mime_type, metadata
       ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `, [
+    `
+    ).run(
       id,
       data.filename,
       data.original_name,
@@ -27,24 +29,25 @@ export class FileRepository {
       data.file_size,
       data.mime_type,
       data.metadata ? JSON.stringify(data.metadata) : null
-    ])
+    )
 
     return id
   }
 
   static async findByHash(fileHash: string): Promise<FileRecord | null> {
     const db = await getDatabase()
-    
-    const file = await db.get<FileRecord>(
-      'SELECT * FROM files WHERE file_hash = ?',
-      [fileHash]
-    )
+
+    const file = db
+      .prepare<FileRecord>('SELECT * FROM files WHERE file_hash = ?')
+      .get(fileHash)
 
     if (file) {
       return {
         ...file,
-        qdrant_points: file.qdrant_points ? JSON.parse(file.qdrant_points) : null,
-        metadata: file.metadata ? JSON.parse(file.metadata) : null
+        qdrant_points: file.qdrant_points
+          ? JSON.parse(file.qdrant_points)
+          : null,
+        metadata: file.metadata ? JSON.parse(file.metadata) : null,
       }
     }
 
@@ -52,72 +55,79 @@ export class FileRepository {
   }
 
   static async updateStatus(
-    fileId: string, 
-    status: FileStatus, 
+    fileId: string,
+    status: FileStatus,
     errorMessage?: string
   ): Promise<void> {
     const db = await getDatabase()
-    
-    await db.run(`
+
+    db.prepare(
+      `
       UPDATE files 
       SET status = ?, error_message = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [status, errorMessage || null, fileId])
+    `
+    ).run(status, errorMessage || null, fileId)
   }
 
   static async updateQdrantPoints(
-    fileId: string, 
+    fileId: string,
     qdrantPoints: string[]
   ): Promise<void> {
     const db = await getDatabase()
-    
-    await db.run(`
+
+    db.prepare(
+      `
       UPDATE files 
       SET qdrant_points = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [JSON.stringify(qdrantPoints), fileId])
+    `
+    ).run(JSON.stringify(qdrantPoints), fileId)
   }
 
   static async updateChunksCount(
-    fileId: string, 
+    fileId: string,
     chunksCount: number
   ): Promise<void> {
     const db = await getDatabase()
-    
-    await db.run(`
+
+    db.prepare(
+      `
       UPDATE files 
       SET chunks_count = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `, [chunksCount, fileId])
+    `
+    ).run(chunksCount, fileId)
   }
 
   static async getAllFiles(): Promise<FileRecord[]> {
     const db = await getDatabase()
-    
-    const files = await db.all<FileRecord[]>(
-      'SELECT * FROM files ORDER BY upload_date DESC'
-    )
 
-    return files.map(file => ({
+    const files = db
+      .prepare<FileRecord[]>('SELECT * FROM files ORDER BY upload_date DESC')
+      .all()
+
+    return files.map((file) => ({
       ...file,
       qdrant_points: file.qdrant_points ? JSON.parse(file.qdrant_points) : null,
-      metadata: file.metadata ? JSON.parse(file.metadata) : null
+      metadata: file.metadata ? JSON.parse(file.metadata) : null,
     }))
   }
 
   static async getFileById(fileId: string): Promise<FileRecord | null> {
     const db = await getDatabase()
-    
-    const file = await db.get<FileRecord>(
-      'SELECT * FROM files WHERE id = ?',
-      [fileId]
-    )
+
+    const file = db
+      .prepare<FileRecord>('SELECT * FROM files WHERE id = ?')
+      .get(fileId)
 
     if (file) {
       return {
         ...file,
-        qdrant_points: file.qdrant_points ? JSON.parse(file.qdrant_points) : null,
-        metadata: file.metadata ? JSON.parse(file.metadata) : null
+        qdrant_points: file.qdrant_points
+          ? JSON.parse(file.qdrant_points)
+          : null,
+        metadata: file.metadata ? JSON.parse(file.metadata) : null,
       }
     }
 
@@ -126,8 +136,8 @@ export class FileRepository {
 
   static async deleteFile(fileId: string): Promise<void> {
     const db = await getDatabase()
-    
-    await db.run('DELETE FROM files WHERE id = ?', [fileId])
+
+    db.prepare('DELETE FROM files WHERE id = ?').run(fileId)
   }
 
   static async getStats(): Promise<{
@@ -137,31 +147,43 @@ export class FileRepository {
     byType: Record<string, number>
   }> {
     const db = await getDatabase()
-    
-    const stats = await db.get(`
+
+    const stats = db
+      .prepare(
+        `
       SELECT 
         COUNT(*) as totalFiles,
         SUM(file_size) as totalSize
       FROM files
-    `)
+    `
+      )
+      .get()
 
-    const byStatus = await db.all(`
+    const byStatus = db
+      .prepare(
+        `
       SELECT status, COUNT(*) as count
       FROM files
       GROUP BY status
-    `)
+    `
+      )
+      .all()
 
-    const byType = await db.all(`
+    const byType = db
+      .prepare(
+        `
       SELECT mime_type, COUNT(*) as count
       FROM files
       GROUP BY mime_type
-    `)
+    `
+      )
+      .all()
 
     return {
       totalFiles: stats.totalFiles || 0,
       totalSize: stats.totalSize || 0,
-      byStatus: Object.fromEntries(byStatus.map(s => [s.status, s.count])),
-      byType: Object.fromEntries(byType.map(t => [t.mime_type, t.count]))
+      byStatus: Object.fromEntries(byStatus.map((s) => [s.status, s.count])),
+      byType: Object.fromEntries(byType.map((t) => [t.mime_type, t.count])),
     }
   }
-} 
+}

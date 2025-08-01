@@ -1,34 +1,144 @@
-import { OpenAIEmbeddings } from '@langchain/openai'
+import OpenAI from 'openai'
 
-/**
- * OpenAI Embeddings configuration for RAG system
- * Using text-embedding-ada-002 model for consistent results
- */
-export const embeddings = new OpenAIEmbeddings({
-  openAIApiKey: process.env.OPENAI_API_KEY!,
-  modelName: 'text-embedding-ada-002',
-  batchSize: 512, // Process multiple texts at once for efficiency
-  stripNewLines: true, // Clean up text formatting
+// Simple in-memory cache for embeddings
+const embeddingCache = new Map<string, number[]>()
+
+// Rate limiting
+let lastRequestTime = 0
+const MIN_REQUEST_INTERVAL = 200 // 200ms between requests
+
+// Initialize OpenAI client
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY!,
+  maxRetries: 3,
+  timeout: 30000, // 30 second timeout
 })
 
 /**
- * Get embedding for a single text
+ * Direct OpenAI API embedding function with caching and rate limiting
  * @param text - Text to embed
  * @returns Promise<number[]> - Embedding vector
  */
 export async function getEmbeddingVector(text: string): Promise<number[]> {
-  const result = await embeddings.embedQuery(text)
-  return result
+  try {
+    // Check cache first
+    const cacheKey = text.substring(0, 100) // Use first 100 chars as key
+    if (embeddingCache.has(cacheKey)) {
+      console.log('💾 [EMBEDDINGS] Using cached embedding')
+      return embeddingCache.get(cacheKey)!
+    }
+
+    // Rate limiting
+    const now = Date.now()
+    const timeSinceLastRequest = now - lastRequestTime
+    if (timeSinceLastRequest < MIN_REQUEST_INTERVAL) {
+      const delay = MIN_REQUEST_INTERVAL - timeSinceLastRequest
+      console.log(`⏱️ [EMBEDDINGS] Rate limiting: waiting ${delay}ms`)
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+
+    console.log(
+      `🔗 [EMBEDDINGS] Getting embedding for text (${text.length} chars)`
+    )
+
+    const response = await openai.embeddings.create({
+      model: 'text-embedding-ada-002',
+      input: text,
+    })
+
+    lastRequestTime = Date.now()
+    const result = response.data[0].embedding
+
+    // Cache the result
+    embeddingCache.set(cacheKey, result)
+
+    // Limit cache size to prevent memory leaks
+    if (embeddingCache.size > 100) {
+      const firstKey = embeddingCache.keys().next().value
+      embeddingCache.delete(firstKey)
+    }
+
+    return result
+  } catch (error) {
+    console.error('❌ [EMBEDDINGS] Error getting embedding:', error)
+
+    // Handle specific OpenAI errors
+    if (error.message.includes('rate_limit')) {
+      throw new Error('OpenAI API rate limit exceeded. Please try again later.')
+    } else if (error.message.includes('quota')) {
+      throw new Error('OpenAI API quota exceeded. Please check your account.')
+    } else if (error.message.includes('authentication')) {
+      throw new Error(
+        'OpenAI API authentication failed. Please check your API key.'
+      )
+    } else {
+      throw new Error(`Embedding generation failed: ${error.message}`)
+    }
+  }
 }
 
 /**
- * Get embeddings for multiple texts
+ * Get embeddings for multiple texts with batching and rate limiting
  * @param texts - Array of texts to embed
  * @returns Promise<number[][]> - Array of embedding vectors
  */
 export async function getEmbeddingVectors(
   texts: string[]
 ): Promise<number[][]> {
-  const results = await embeddings.embedDocuments(texts)
-  return results
+  try {
+    console.log(`🔗 [EMBEDDINGS] Getting embeddings for ${texts.length} texts`)
+
+    // Process in smaller batches to prevent overload
+    const batchSize = 5 // Very small batch size for stability
+    const results: number[][] = []
+
+    for (let i = 0; i < texts.length; i += batchSize) {
+      const batch = texts.slice(i, i + batchSize)
+      console.log(
+        `📦 [EMBEDDINGS] Processing batch ${
+          Math.floor(i / batchSize) + 1
+        }/${Math.ceil(texts.length / batchSize)}`
+      )
+
+      // Rate limiting between batches
+      if (i > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 500)) // 500ms delay between batches
+      }
+
+      const response = await openai.embeddings.create({
+        model: 'text-embedding-ada-002',
+        input: batch,
+      })
+
+      const batchResults = response.data.map((item) => item.embedding)
+      results.push(...batchResults)
+
+      // Force garbage collection hint
+      if (global.gc) {
+        global.gc()
+      }
+    }
+
+    console.log(
+      `✅ [EMBEDDINGS] Successfully generated ${results.length} embeddings`
+    )
+    return results
+  } catch (error) {
+    console.error('❌ [EMBEDDINGS] Error getting embeddings:', error)
+    throw new Error(`Batch embedding generation failed: ${error.message}`)
+  }
+}
+
+/**
+ * Clear embedding cache (useful for testing or memory management)
+ */
+export function clearEmbeddingCache(): void {
+  embeddingCache.clear()
+  console.log('🧹 [EMBEDDINGS] Cache cleared')
+}
+
+// Export a dummy embeddings object for compatibility with existing code
+export const embeddings = {
+  embedQuery: getEmbeddingVector,
+  embedDocuments: getEmbeddingVectors,
 }

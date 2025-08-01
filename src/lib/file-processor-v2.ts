@@ -153,28 +153,26 @@ export class MultiFormatFileProcessor {
   private chunkByChapters(
     text: string
   ): Array<{ content: string; index: number }> {
-    // AGGRESSIVE: For EPUB/FB2 always use token-based chunking with hard limits
-    if (text.length > 30000) {
-      // 30KB limit - very conservative
+    // AGGRESSIVE MEMORY PROTECTION: Hard limits to prevent crashes
+    const MAX_FILE_SIZE = FILE_CONFIG.MAX_TEXT_LENGTH // Use config limit
+    const MAX_CHUNKS = FILE_CONFIG.MAX_CHUNKS_PER_FILE // Use config limit
+
+    if (text.length > MAX_FILE_SIZE) {
       console.warn(
-        `⚠️ Large EPUB/FB2 file (${text.length} chars), using token-based chunking to prevent OpenAI token limit issues`
+        `🚨 CRITICAL: File too large (${text.length} chars), truncating to ${MAX_FILE_SIZE} to prevent memory crash`
       )
+      text =
+        text.substring(0, MAX_FILE_SIZE) +
+        '\n\n[... файл обрезан для стабильной работы системы ...]'
+    }
 
-      // AGGRESSIVE TRUNCATION: Hard limit at 80KB to prevent crashes
-      if (text.length > 80000) {
-        // 80KB absolute limit
-        console.warn(
-          `🚨 CRITICAL: File too large (${text.length} chars), truncating to 80KB to prevent server crash`
-        )
-        text =
-          text.substring(0, 80000) +
-          '\n\n[... файл обрезан из-за большого размера для стабильной работы ...]'
-      }
-
+    // Use token-based chunking for all large files
+    if (text.length > 10000) {
+      console.log(`📝 Large file detected, using token-based chunking`)
       return this.chunkByTokens(text)
     }
 
-    // Look for chapter markers
+    // Look for chapter markers with memory-efficient approach
     const chapterMarkers = [
       /\n\s*Глава\s+\d+/gi,
       /\n\s*ГЛАВА\s+\d+/gi,
@@ -184,15 +182,26 @@ export class MultiFormatFileProcessor {
 
     let chapters = [text]
 
-    // Try to split by chapter markers (optimized)
+    // Try to split by chapter markers (memory optimized)
     for (const marker of chapterMarkers) {
+      if (chapters.length >= MAX_CHUNKS) {
+        console.warn(
+          `⚠️ Too many chapters (${chapters.length}), stopping split`
+        )
+        break
+      }
+
       const newChapters = []
       for (const chapter of chapters) {
-        // More efficient splitting
+        // More efficient splitting with limits
         const matches = Array.from(chapter.matchAll(marker))
-        if (matches.length > 0) {
+        if (matches.length > 0 && matches.length < 5) {
+          // Reduced limit
+          // Limit matches
           let lastIndex = 0
           for (const match of matches) {
+            if (newChapters.length >= MAX_CHUNKS) break
+
             // Add text before the match
             if (match.index > lastIndex) {
               const beforeText = chapter.substring(lastIndex, match.index)
@@ -204,54 +213,49 @@ export class MultiFormatFileProcessor {
           }
           // Add remaining text after last match
           const remainingText = chapter.substring(lastIndex)
-          if (remainingText.trim().length > 100) {
+          if (
+            remainingText.trim().length > 100 &&
+            newChapters.length < MAX_CHUNKS
+          ) {
             newChapters.push(remainingText)
           }
         } else {
           newChapters.push(chapter)
         }
       }
-      chapters = newChapters.filter((c) => c.trim().length > 100) // Minimum 100 chars
+      chapters = newChapters.filter((c) => c.trim().length > 100)
     }
 
-    // If chapters are too large, split them more carefully
+    // Final chunking with strict limits
     const finalChunks = []
     let chunkIndex = 0
 
     for (const chapter of chapters) {
-      if (chapter.length > FILE_CONFIG.chunkSize * 3) {
-        // Very large chapter - use paragraph splitting first
-        const paragraphs = chapter
-          .split(/\n\s*\n/)
-          .filter((p) => p.trim().length > 50)
-        let currentChunk = ''
+      if (finalChunks.length >= MAX_CHUNKS) {
+        console.warn(`⚠️ Reached maximum chunks limit (${MAX_CHUNKS})`)
+        break
+      }
 
-        for (const paragraph of paragraphs) {
-          if (currentChunk.length + paragraph.length > FILE_CONFIG.chunkSize) {
-            if (currentChunk.trim()) {
-              finalChunks.push({
-                content: currentChunk.trim(),
-                index: chunkIndex++,
-              })
-            }
-            currentChunk = paragraph
-          } else {
-            currentChunk += (currentChunk ? '\n\n' : '') + paragraph
-          }
-        }
-
-        if (currentChunk.trim()) {
+      if (chapter.length > FILE_CONFIG.chunkSize * 2) {
+        // Large chapter - use token splitting
+        const tokenChunks = this.chunkByTokens(chapter)
+        for (const chunk of tokenChunks) {
+          if (finalChunks.length >= MAX_CHUNKS) break
           finalChunks.push({
-            content: currentChunk.trim(),
+            content: chunk.content,
             index: chunkIndex++,
           })
         }
       } else {
-        finalChunks.push({ content: chapter.trim(), index: chunkIndex++ })
+        finalChunks.push({
+          content: chapter,
+          index: chunkIndex++,
+        })
       }
     }
 
-    return finalChunks.length > 0 ? finalChunks : this.chunkByTokens(text)
+    console.log(`📝 Created ${finalChunks.length} chunks from chapters`)
+    return finalChunks
   }
 
   /**
@@ -291,12 +295,34 @@ export class MultiFormatFileProcessor {
   }
 
   /**
-   * Standard token-based splitting for PDF and TXT
+   * Standard token-based splitting for PDF and TXT - MEMORY PROTECTED
    */
   private chunkByTokens(
     text: string
   ): Array<{ content: string; index: number }> {
+    // Memory protection: limit text size
+    if (text.length > FILE_CONFIG.MAX_TEXT_LENGTH) {
+      console.warn(
+        `🚨 CRITICAL: Text too large (${text.length} chars), truncating to ${FILE_CONFIG.MAX_TEXT_LENGTH}`
+      )
+      text =
+        text.substring(0, FILE_CONFIG.MAX_TEXT_LENGTH) +
+        '\n\n[... текст обрезан для стабильной работы системы ...]'
+    }
+
     const chunks = TextSplitter.splitText(text)
+
+    // Limit number of chunks to prevent memory issues
+    if (chunks.length > FILE_CONFIG.MAX_CHUNKS_PER_FILE) {
+      console.warn(
+        `⚠️ Too many chunks (${chunks.length}), limiting to ${FILE_CONFIG.MAX_CHUNKS_PER_FILE}`
+      )
+      return chunks.slice(0, FILE_CONFIG.MAX_CHUNKS_PER_FILE).map((chunk) => ({
+        content: chunk.content.trim(),
+        index: chunk.index,
+      }))
+    }
+
     return chunks.map((chunk) => ({
       content: chunk.content.trim(),
       index: chunk.index,

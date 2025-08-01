@@ -1,57 +1,58 @@
-/**
- * Simple API test for LangChain integration
- * Run: npx tsx scripts/test-api-simple.ts
- */
+import fetch from 'node-fetch'
 
-async function testApiEndpoint() {
-  console.log('🧪 Testing /api/ask endpoint with LangChain...\n')
+const BASE_URL = 'http://localhost:3000'
 
-  const testQuestion = 'Что такое духовность?'
-  
+async function testAPIEndpoints() {
+  console.log('🧪 Testing API endpoints...')
+
   try {
-    console.log(`🔍 Sending request: "${testQuestion}"`)
-    
-    const response = await fetch('http://localhost:3001/api/ask', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ question: testQuestion }),
-    })
+    // Test 1: Auth session endpoint
+    console.log('\n🔐 Test 1: Auth session endpoint...')
+    const sessionResponse = await fetch(`${BASE_URL}/api/auth/session`)
+    console.log('Session response status:', sessionResponse.status)
+    console.log('Session response ok:', sessionResponse.ok)
 
-    console.log(`📊 Response status: ${response.status}`)
+    // Test 2: Main page
+    console.log('\n🏠 Test 2: Main page...')
+    const mainResponse = await fetch(`${BASE_URL}/`)
+    console.log('Main page status:', mainResponse.status)
+    console.log('Main page ok:', mainResponse.ok)
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('❌ API Error:', errorText)
-      return
+    // Test 3: Admin page (should redirect to login)
+    console.log('\n👤 Test 3: Admin page...')
+    const adminResponse = await fetch(`${BASE_URL}/admin`)
+    console.log('Admin page status:', adminResponse.status)
+    console.log('Admin page ok:', adminResponse.ok)
+
+    // Test 4: Check if server is running
+    console.log('\n🖥️ Test 4: Server health...')
+    try {
+      const healthResponse = await fetch(`${BASE_URL}/api/auth/session`, {
+        timeout: 5000,
+      })
+      if (healthResponse.ok) {
+        console.log('✅ Server is healthy and responding')
+      } else {
+        console.log(
+          '⚠️ Server responding but with status:',
+          healthResponse.status
+        )
+      }
+    } catch (error) {
+      console.error('❌ Server health check failed:', error.message)
     }
-
-    const data = await response.json()
-    
-    console.log('✅ API Response received:')
-    console.log(`   📝 Answer length: ${data.answer?.length || 0} characters`)
-    console.log(`   📚 Sources found: ${data.sourcesCount || 0}`)
-    console.log(`   🎯 Has context: ${data.hasContext}`)
-    console.log(`   🔗 Qdrant status: ${data.qdrantStatus}`)
-    console.log(`   📊 Search score: ${data.searchScore}`)
-    
-    if (data.answer) {
-      console.log(`\n💬 Sample answer: "${data.answer.substring(0, 200)}..."`)
-    }
-    
-    if (data.sources && data.sources.length > 0) {
-      console.log(`\n📖 Sample source: "${data.sources[0].content.substring(0, 100)}..."`)
-    }
-
-    console.log('\n🎉 LangChain API test successful!')
-    
   } catch (error) {
-    console.error('❌ Test failed:', error.message)
-    console.log('\n💡 Make sure the development server is running:')
-    console.log('   npm run dev')
+    console.error('❌ API test failed:', error)
   }
 }
 
 // Run the test
-testApiEndpoint().catch(console.error)
+testAPIEndpoints()
+  .then(() => {
+    console.log('\n🏁 API testing completed')
+    process.exit(0)
+  })
+  .catch((error) => {
+    console.error('💥 API test crashed:', error)
+    process.exit(1)
+  })

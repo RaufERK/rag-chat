@@ -1,9 +1,10 @@
-import { llm } from './llm'
+import { llm, createLLM } from './llm'
 import { createRetriever } from './vectorstore'
 import {
   createSpiritualPrompt,
   formatEnhancedContextForPrompt,
 } from './prompts'
+import { RAGSettings } from '@/lib/settings-service'
 
 /**
  * Simple RAG chain implementation without external dependencies
@@ -23,28 +24,28 @@ export async function createSpiritualRAGChain() {
       try {
         // 1. Retrieve documents
         const documents = await retriever.getRelevantDocuments(options.query)
-        
+
         // 2. Format context
-        const context = documents.map(doc => doc.pageContent).join('\n\n')
-        
+        const context = documents.map((doc) => doc.pageContent).join('\n\n')
+
         // 3. Generate prompt
         const formattedPrompt = await prompt.format({
           context: context || 'Контекст не найден.',
-          question: options.query
+          question: options.query,
         })
-        
+
         // 4. Get LLM response
         const response = await llm.invoke(formattedPrompt)
-        
+
         return {
           text: response.content,
-          sourceDocuments: documents
+          sourceDocuments: documents,
         }
       } catch (error) {
         console.error('❌ Simple RAG Chain Error:', error)
         throw error
       }
-    }
+    },
   }
 }
 
@@ -58,9 +59,26 @@ export class EnhancedSpiritualRAGChain {
   private prompt: any
 
   constructor() {
-    this.retriever = createRetriever({ k: 8, scoreThreshold: 0.3 })
-    this.llm = llm
-    this.prompt = createSpiritualPrompt(true)
+    // Initialize with default values, will be updated in call method
+    this.retriever = null
+    this.llm = null
+    this.prompt = null
+  }
+
+  /**
+   * Initialize components with dynamic settings
+   */
+  private async initialize() {
+    if (!this.retriever) {
+      this.retriever = await createRetriever()
+    }
+    if (!this.llm) {
+      this.llm = await createLLM()
+    }
+    if (!this.prompt) {
+      const spiritualEnabled = await RAGSettings.isSpiritualPromptEnabled()
+      this.prompt = createSpiritualPrompt(spiritualEnabled)
+    }
   }
 
   /**
@@ -72,6 +90,9 @@ export class EnhancedSpiritualRAGChain {
     relevanceScores: number[]
   }> {
     try {
+      // Initialize components with dynamic settings
+      await this.initialize()
+
       // Step 1: Retrieve documents
       const retrievedDocs = await this.retriever.getRelevantDocuments(
         options.query
@@ -85,11 +106,11 @@ export class EnhancedSpiritualRAGChain {
         }
       }
 
-      // Step 2: Re-rank documents (our custom logic)
-      const rerankedDocs = await this.reRankDocuments(
-        retrievedDocs,
-        options.query
-      )
+      // Step 2: Re-rank documents (our custom logic) - only if enabled
+      const rerankEnabled = await RAGSettings.isRerankEnabled()
+      const rerankedDocs = rerankEnabled
+        ? await this.reRankDocuments(retrievedDocs, options.query)
+        : retrievedDocs
 
       // Step 3: Format enhanced context
       const context = formatEnhancedContextForPrompt(rerankedDocs)
