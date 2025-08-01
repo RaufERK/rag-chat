@@ -22,8 +22,8 @@ const TEST_FILES: TestFile[] = [
     format: 'TXT',
   },
   {
-    name: 'призыв перед 10.03 из 5-11.docx',
-    path: 'test-data/docx/призыв перед 10.03 из 5-11.docx',
+    name: 'Призыв_о_демагнетизации_кристаллов.docx',
+    path: 'test-data/docx/Призыв_о_демагнетизации_кристаллов.docx',
     format: 'DOCX',
   },
   {
@@ -66,9 +66,26 @@ async function testFormat(testFile: TestFile): Promise<boolean> {
 
     if (response.ok) {
       const result = await response.json()
+
+      if (result.existing) {
+        console.log(`✅ Success! File already exists in database`)
+        console.log(`📁 File ID: ${result.fileId}`)
+        console.log(`📄 Filename: ${result.filename}`)
+        return true
+      }
+
       console.log(`✅ Success! Processor: ${result.processor}`)
       console.log(`📝 Text length: ${result.textLength} characters`)
-      console.log(`📄 Preview: "${result.preview.substring(0, 100)}..."`)
+      console.log(
+        `📊 Chunks: ${result.chunksCount || 'N/A'}, Avg tokens: ${
+          result.averageTokensPerChunk || 'N/A'
+        }`
+      )
+      console.log(
+        `📄 Preview: "${
+          result.preview ? result.preview.substring(0, 100) : 'N/A'
+        }..."`
+      )
       return true
     } else {
       const errorText = await response.text()

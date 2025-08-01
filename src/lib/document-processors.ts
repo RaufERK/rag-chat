@@ -1,16 +1,8 @@
 import path from 'path'
-import fs from 'fs/promises'
-// Полностью динамический импорт pdf-parse для избежания проблем с Next.js
-import xml2js from 'xml2js'
-// Временно отключаем epub2 из-за проблем с zipfile модулем
-// import EPub from 'epub2'
+import pdfParse from 'pdf-parse'
 import mammoth from 'mammoth'
-// import textract from 'textract' // Временно отключено из-за проблем с Next.js
+const WordExtractor = require('word-extractor')
 
-/**
- * Universal Document Processor Interface
- * Each file format implements this interface
- */
 export interface DocumentProcessor {
   supportedMimeTypes: string[]
   supportedExtensions: string[]
@@ -18,112 +10,30 @@ export interface DocumentProcessor {
   validateFile(buffer: Buffer): boolean
 }
 
-/**
- * PDF Document Processor
- * Uses pdf-parse for text extraction with enhanced error handling
- */
 export class PDFProcessor implements DocumentProcessor {
   supportedMimeTypes = ['application/pdf']
   supportedExtensions = ['.pdf']
 
   async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    try {
-      console.log(`📄 [PDF] Starting PDF processing for: ${filePath}`)
-
-      // Validate PDF header
-      if (!this.validateFile(buffer)) {
-        throw new Error('Invalid PDF file: missing PDF header')
-      }
-
-      // Dynamic import with error handling
-      let pdfParse
-      try {
-        pdfParse = (await import('pdf-parse')).default
-      } catch (importError) {
-        console.error('❌ [PDF] Failed to import pdf-parse:', importError)
-        throw new Error('PDF parsing library not available')
-      }
-
-      // Enhanced options for stability
-      const options = {
-        max: 100, // Increased page limit
-        version: 'v1.10.100',
-        normalizeWhitespace: true,
-        disableCombineTextItems: false,
-      }
-
-      console.log(`📄 [PDF] Parsing PDF with ${buffer.length} bytes...`)
-      const pdfData = await pdfParse(buffer, options)
-
-      if (!pdfData || !pdfData.text) {
-        throw new Error('PDF parsing returned empty result')
-      }
-
-      let text = pdfData.text.trim()
-
-      // Enhanced text cleaning
-      text = this.cleanExtractedText(text)
-
-      if (text.length === 0) {
-        throw new Error('PDF contains no readable text after processing')
-      }
-
-      console.log(`✅ [PDF] Successfully extracted ${text.length} characters`)
-      return text
-    } catch (error) {
-      console.error('❌ [PDF] Processing error:', error)
-
-      // Provide more specific error messages
-      if (error.message.includes('password')) {
-        throw new Error('PDF is password-protected and cannot be processed')
-      } else if (error.message.includes('corrupted')) {
-        throw new Error('PDF file appears to be corrupted or damaged')
-      } else if (error.message.includes('images')) {
-        throw new Error('PDF contains only images - no text content available')
-      } else {
-        throw new Error(`PDF processing failed: ${error.message}`)
-      }
-    }
-  }
-
-  private cleanExtractedText(text: string): string {
-    return text
-      .replace(/\s+/g, ' ') // Normalize whitespace
-      .replace(/\n\s*\n/g, '\n') // Remove empty lines
-      .replace(/[^\w\sа-яёА-ЯЁ.,!?;:()\[\]{}"'\-–—…]/g, '') // Keep only readable characters
-      .trim()
+    const pdfData = await pdfParse(buffer)
+    return pdfData.text
   }
 
   validateFile(buffer: Buffer): boolean {
-    try {
-      // Check PDF header
-      const header = buffer.subarray(0, 8).toString('ascii')
-      return header.startsWith('%PDF')
-    } catch {
-      return false
-    }
+    return buffer.subarray(0, 4).toString() === '%PDF'
   }
 }
 
-/**
- * Plain Text Document Processor
- * Simple UTF-8 text processing
- */
 export class TXTProcessor implements DocumentProcessor {
   supportedMimeTypes = ['text/plain']
   supportedExtensions = ['.txt']
 
   async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    try {
-      return buffer.toString('utf-8').trim()
-    } catch (error) {
-      throw new Error(`Text file reading failed: ${error.message}`)
-    }
+    return buffer.toString('utf-8')
   }
 
   validateFile(buffer: Buffer): boolean {
     try {
-      // Try to decode as UTF-8
       buffer.toString('utf-8')
       return true
     } catch {
@@ -132,195 +42,6 @@ export class TXTProcessor implements DocumentProcessor {
   }
 }
 
-/**
- * FB2 (FictionBook) Document Processor
- * Uses xml2js for XML parsing
- */
-export class FB2Processor implements DocumentProcessor {
-  supportedMimeTypes = [
-    'application/x-fictionbook+xml',
-    'text/xml',
-    'application/xml',
-  ]
-  supportedExtensions = ['.fb2']
-
-  async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    try {
-      const xml = buffer.toString('utf-8')
-      const parser = new xml2js.Parser()
-      const result = await parser.parseStringPromise(xml)
-
-      if (!result.FictionBook) {
-        throw new Error(
-          'Invalid FB2 format: FictionBook root element not found'
-        )
-      }
-
-      // Extract metadata
-      const titleInfo =
-        result.FictionBook?.description?.[0]?.['title-info']?.[0]
-      const title = titleInfo?.['book-title']?.[0] || ''
-      const authors = titleInfo?.author || []
-
-      let metadata = ''
-      if (title) {
-        metadata += `Название: ${title}\n`
-      }
-
-      if (authors.length > 0) {
-        const authorNames = authors
-          .map((author: any) => {
-            const firstName = author['first-name']?.[0] || ''
-            const lastName = author['last-name']?.[0] || ''
-            return `${firstName} ${lastName}`.trim()
-          })
-          .filter(Boolean)
-
-        if (authorNames.length > 0) {
-          metadata += `Автор: ${authorNames.join(', ')}\n`
-        }
-      }
-
-      // Extract main text content
-      const bodyText = this.extractTextFromNode(result.FictionBook?.body)
-
-      return metadata + (metadata ? '\n\n' : '') + bodyText
-    } catch (error) {
-      throw new Error(`FB2 parsing failed: ${error.message}`)
-    }
-  }
-
-  private extractTextFromNode(node: any): string {
-    if (typeof node === 'string') {
-      return node.trim()
-    }
-
-    if (Array.isArray(node)) {
-      return node.map((n) => this.extractTextFromNode(n)).join(' ')
-    }
-
-    if (typeof node === 'object' && node !== null) {
-      let text = ''
-
-      // Handle different FB2 elements
-      if (node.p) {
-        text += this.extractTextFromNode(node.p) + '\n'
-      }
-      if (node.section) {
-        text += this.extractTextFromNode(node.section) + '\n\n'
-      }
-      if (node.title) {
-        text += this.extractTextFromNode(node.title) + '\n'
-      }
-      if (node.subtitle) {
-        text += this.extractTextFromNode(node.subtitle) + '\n'
-      }
-
-      // If none of the specific elements, try to extract text from all properties
-      if (!node.p && !node.section && !node.title && !node.subtitle) {
-        for (const key in node) {
-          if (key !== '$' && node.hasOwnProperty(key)) {
-            // Skip XML attributes
-            text += this.extractTextFromNode(node[key]) + ' '
-          }
-        }
-      }
-
-      return text.trim()
-    }
-
-    return ''
-  }
-
-  validateFile(buffer: Buffer): boolean {
-    const content = buffer.toString('utf-8', 0, 1000) // Check first 1000 bytes
-    return (
-      content.includes('<FictionBook') ||
-      (content.includes('<?xml') && content.includes('FictionBook'))
-    )
-  }
-}
-
-/**
- * EPUB Document Processor
- * Uses epub2 library for EPUB extraction
- */
-export class EPUBProcessor implements DocumentProcessor {
-  supportedMimeTypes = ['application/epub+zip']
-  supportedExtensions = ['.epub']
-
-  async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    return new Promise((resolve, reject) => {
-      try {
-        // const epub = new EPub(filePath) // This line was removed as per the edit hint
-
-        // epub.on('end', () => { // This block was removed as per the edit hint
-        //   try {
-        //     const chapters = epub.flow.map((chapter) => chapter.id)
-        //     let fullText = ''
-        //     let processedChapters = 0
-
-        //     if (chapters.length === 0) {
-        //       resolve('')
-        //       return
-        //     }
-
-        //     chapters.forEach((chapterId) => {
-        //       epub.getChapter(chapterId, (error, text) => {
-        //         if (error) {
-        //           console.warn(`Failed to extract chapter ${chapterId}:`, error)
-        //           text = '' // Continue with empty text for this chapter
-        //         }
-
-        //         if (text) {
-        //           // Remove HTML tags and clean up
-        //           const cleanText = text
-        //             .replace(/<[^>]*>/g, '')
-        //             .replace(/\s+/g, ' ')
-        //             .replace(/\n\s*\n/g, '\n\n')
-        //             .trim()
-
-        //           if (cleanText) {
-        //             fullText += cleanText + '\n\n'
-        //           }
-        //         }
-
-        //         processedChapters++
-        //         if (processedChapters === chapters.length) {
-        //           resolve(fullText.trim())
-        //         }
-        //       })
-        //     })
-        //   } catch (error) {
-        //     reject(new Error(`EPUB processing failed: ${error.message}`))
-        //   }
-        // })
-
-        // epub.on('error', (error) => { // This block was removed as per the edit hint
-        //   reject(new Error(`EPUB parsing failed: ${error.message}`))
-        // })
-
-        // epub.parse() // This line was removed as per the edit hint
-        reject(
-          new Error('EPUB processing temporarily disabled due to module issues')
-        )
-      } catch (error) {
-        reject(new Error(`EPUB initialization failed: ${error.message}`))
-      }
-    })
-  }
-
-  validateFile(buffer: Buffer): boolean {
-    // EPUB files are ZIP archives, check ZIP signature
-    const zipSignature = buffer.subarray(0, 4)
-    return zipSignature.toString('hex') === '504b0304'
-  }
-}
-
-/**
- * DOCX Document Processor (Modern Word format)
- * Uses mammoth library for DOCX extraction
- */
 export class DOCXProcessor implements DocumentProcessor {
   supportedMimeTypes = [
     'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
@@ -328,67 +49,60 @@ export class DOCXProcessor implements DocumentProcessor {
   supportedExtensions = ['.docx']
 
   async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    try {
-      const result = await mammoth.extractRawText({ buffer })
-      return result.value.trim()
-    } catch (error) {
-      throw new Error(`DOCX parsing failed: ${error.message}`)
-    }
+    const result = await mammoth.extractRawText({ buffer })
+    return result.value
   }
 
   validateFile(buffer: Buffer): boolean {
-    // DOCX files are ZIP archives with specific structure
-    const zipSignature = buffer.subarray(0, 4)
-    return zipSignature.toString('hex') === '504b0304'
+    // DOCX файлы это ZIP архивы с определенной структурой
+    return buffer.subarray(0, 4).toString('hex') === '504b0304'
   }
 }
 
-/**
- * DOC Document Processor (Legacy Word format)
- * Uses textract library for DOC extraction
- */
 export class DOCProcessor implements DocumentProcessor {
-  supportedMimeTypes = ['application/msword']
+  supportedMimeTypes = ['application/msword', 'application/vnd.ms-word']
   supportedExtensions = ['.doc']
 
   async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    // Временно отключено из-за проблем с textract в Next.js
-    throw new Error(
-      'DOC format is temporarily disabled due to compatibility issues with Next.js'
-    )
+    const extractor = new WordExtractor()
+    const extracted = await extractor.extract(buffer)
+    const body = extracted.getBody()
+
+    // Также извлекаем footnotes и endnotes если есть
+    const footnotes = extracted.getFootnotes()
+    const endnotes = extracted.getEndnotes()
+
+    let fullText = body
+    if (footnotes && footnotes.trim()) {
+      fullText += '\n\n--- Footnotes ---\n' + footnotes
+    }
+    if (endnotes && endnotes.trim()) {
+      fullText += '\n\n--- Endnotes ---\n' + endnotes
+    }
+
+    return fullText
   }
 
   validateFile(buffer: Buffer): boolean {
-    // DOC files start with OLE signature
-    const signature = buffer.subarray(0, 8).toString('hex')
-    return signature === 'd0cf11e0a1b11ae1'
+    // DOC файлы начинаются с OLE заголовка
+    const header = buffer.subarray(0, 8).toString('hex')
+    return header === 'd0cf11e0a1b11ae1' // OLE signature
   }
 }
 
-/**
- * Document Processor Factory
- * Creates appropriate processor based on file type
- */
+// Фабрика процессоров
 export class DocumentProcessorFactory {
   private processors: DocumentProcessor[] = [
-    new PDFProcessor(), // ⚠️ Включён с улучшенной обработкой ошибок
-    new TXTProcessor(), // ✅ Включён обратно - простой UTF-8 декодинг
-    new FB2Processor(),
-    new EPUBProcessor(),
+    new PDFProcessor(),
+    new TXTProcessor(),
     new DOCXProcessor(),
-    new DOCProcessor(), // ⚠️ Включён - выдает ошибку о несовместимости с Next.js
+    new DOCProcessor(),
   ]
 
-  /**
-   * Get processor for a specific file
-   * @param fileName - Name of the file
-   * @param mimeType - MIME type (optional)
-   * @returns DocumentProcessor or null if not supported
-   */
   getProcessor(fileName: string, mimeType?: string): DocumentProcessor | null {
     const extension = path.extname(fileName).toLowerCase()
 
-    // First try MIME type matching
+    // Сначала ищем по MIME типу
     if (mimeType) {
       const processor = this.processors.find((p) =>
         p.supportedMimeTypes.includes(mimeType)
@@ -396,7 +110,7 @@ export class DocumentProcessorFactory {
       if (processor) return processor
     }
 
-    // Then try extension matching
+    // Затем по расширению файла
     const processor = this.processors.find((p) =>
       p.supportedExtensions.includes(extension)
     )
@@ -404,81 +118,42 @@ export class DocumentProcessorFactory {
     return processor || null
   }
 
-  /**
-   * Get all supported file extensions
-   * @returns Array of supported extensions
-   */
   getSupportedExtensions(): string[] {
     return this.processors.flatMap((p) => p.supportedExtensions)
   }
 
-  /**
-   * Get all supported MIME types
-   * @returns Array of supported MIME types
-   */
   getSupportedMimeTypes(): string[] {
     return this.processors.flatMap((p) => p.supportedMimeTypes)
   }
 
-  /**
-   * Check if file format is supported
-   * @param fileName - Name of the file
-   * @param mimeType - MIME type (optional)
-   * @returns True if supported
-   */
   isSupported(fileName: string, mimeType?: string): boolean {
     return this.getProcessor(fileName, mimeType) !== null
   }
 }
 
-// Export singleton instance
 export const documentProcessorFactory = new DocumentProcessorFactory()
 
 /**
- * Helper function to process a file with appropriate processor
- * @param filePath - Path to the file
- * @param buffer - File buffer
- * @param fileName - Original file name
- * @param mimeType - MIME type (optional)
- * @returns Extracted text content
+ * Универсальная функция для извлечения текста из файла
+ * Использует соответствующий процессор для каждого формата
  */
-export async function processDocumentFile(
-  filePath: string,
-  buffer: Buffer,
-  fileName: string,
-  mimeType?: string
-): Promise<{
-  text: string
-  processor: string
-  format: string
-}> {
-  const processor = documentProcessorFactory.getProcessor(fileName, mimeType)
+export async function extractTextFromFile(filePath: string): Promise<string> {
+  const fileName = path.basename(filePath)
+  const processor = documentProcessorFactory.getProcessor(fileName)
 
   if (!processor) {
-    throw new Error(
-      `Unsupported file format: ${fileName}. Supported formats: ${documentProcessorFactory
-        .getSupportedExtensions()
-        .join(', ')}`
-    )
+    throw new Error(`Unsupported file format: ${fileName}`)
   }
 
-  // Validate file
+  // Читаем файл для валидации
+  const fs = await import('fs/promises')
+  const buffer = await fs.readFile(filePath)
+
+  // Валидируем файл
   if (!processor.validateFile(buffer)) {
-    throw new Error(`Invalid or corrupted file: ${fileName}`)
+    throw new Error(`Invalid file format: ${fileName}`)
   }
 
-  // Extract text
-  const text = await processor.extractText(filePath, buffer)
-
-  if (!text.trim()) {
-    throw new Error(`No text content found in file: ${fileName}`)
-  }
-
-  const format = path.extname(fileName).toLowerCase().substring(1)
-
-  return {
-    text: text.trim(),
-    processor: processor.constructor.name,
-    format,
-  }
+  // Извлекаем текст
+  return await processor.extractText(filePath, buffer)
 }

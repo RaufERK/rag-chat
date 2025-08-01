@@ -7,6 +7,7 @@ import { FileRepository } from '@/lib/file-repository'
 import { getEmbeddingVectors } from '@/lib/langchain/embeddings'
 import { addDocuments } from '@/lib/langchain/vectorstore'
 import { Document } from '@langchain/core/documents'
+import { ChunkingService } from '@/lib/chunking-service'
 import crypto from 'crypto'
 
 export async function POST(request: NextRequest) {
@@ -83,8 +84,10 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // If in test mode, just return the extracted text
+    // If in test mode, still use optimized chunking for preview
     if (testMode === 'true') {
+      const chunks = await ChunkingService.splitText(text)
+
       return NextResponse.json({
         success: true,
         filename: file.name,
@@ -92,6 +95,14 @@ export async function POST(request: NextRequest) {
         type: file.type,
         processor: processor.constructor.name,
         textLength: text.length,
+        chunksCount: chunks.length,
+        averageTokensPerChunk:
+          chunks.length > 0
+            ? Math.round(
+                chunks.reduce((sum, c) => sum + (c.tokenCount || 0), 0) /
+                  chunks.length
+              )
+            : 0,
         preview: text.substring(0, 200) + (text.length > 200 ? '...' : ''),
         testMode: true,
         hash: fileHash,
@@ -114,27 +125,43 @@ export async function POST(request: NextRequest) {
     console.log(`💾 [UPLOAD] Saved file to database: ID ${fileId}`)
 
     try {
-      // Generate embeddings
-      console.log(`🔗 [UPLOAD] Generating embeddings...`)
-      const embeddings = await getEmbeddingVectors(text)
-      console.log(`✅ [UPLOAD] Generated ${embeddings.length} embeddings`)
+      // Split text into optimized chunks
+      console.log(`📝 [UPLOAD] Splitting text into optimized chunks...`)
+      const chunks = await ChunkingService.splitText(text)
+      console.log(`✅ [UPLOAD] Created ${chunks.length} optimized chunks`)
 
-      // Create document for vector store
-      const document = new Document({
-        pageContent: text,
-        metadata: {
-          fileId: fileId,
-          filename: file.name,
-          mimeType: file.type,
-          size: file.size,
-          hash: fileHash,
-          uploadedAt: new Date().toISOString(),
-        },
-      })
+      // Generate embeddings for each chunk
+      console.log(
+        `🔗 [UPLOAD] Generating embeddings for ${chunks.length} chunks...`
+      )
+      const startTime = Date.now()
 
-      // Add to vector store
-      await addDocuments([document])
-      console.log(`🗄️ [UPLOAD] Added document to vector store`)
+      const documents = chunks.map(
+        (chunk, index) =>
+          new Document({
+            pageContent: chunk.content,
+            metadata: {
+              fileId: fileId,
+              filename: file.name,
+              mimeType: file.type,
+              size: file.size,
+              hash: fileHash,
+              chunkIndex: chunk.index,
+              chunkStart: chunk.start,
+              chunkEnd: chunk.end,
+              tokenCount: chunk.tokenCount,
+              uploadedAt: new Date().toISOString(),
+            },
+          })
+      )
+
+      // Add all documents to vector store
+      await addDocuments(documents)
+
+      const embeddingTime = Date.now() - startTime
+      console.log(
+        `🗄️ [UPLOAD] Added ${documents.length} documents to vector store in ${embeddingTime}ms`
+      )
 
       // Note: FileRepository doesn't have update method, so we skip status update for now
 
@@ -145,7 +172,12 @@ export async function POST(request: NextRequest) {
         filename: file.name,
         size: file.size,
         textLength: text.length,
-        embeddingsCount: embeddings.length,
+        chunksCount: chunks.length,
+        averageTokensPerChunk: Math.round(
+          chunks.reduce((sum, c) => sum + (c.tokenCount || 0), 0) /
+            chunks.length
+        ),
+        embeddingTime: embeddingTime,
         processor: processor.constructor.name,
       })
     } catch (embeddingError) {

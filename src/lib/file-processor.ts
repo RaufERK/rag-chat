@@ -3,6 +3,7 @@ import fsSync from 'fs'
 import path from 'path'
 import { TextSplitter } from './text-splitter'
 import { FILE_CONFIG } from './file-config'
+import { documentProcessorFactory } from './document-processors'
 
 export interface ProcessedFile {
   text: string
@@ -16,170 +17,92 @@ export interface ProcessedFile {
     author?: string
     subject?: string
     keywords?: string[]
+    format?: string
+    processor?: string
   }
 }
 
 export class FileProcessor {
   /**
-   * Обрабатывает PDF файл
-   */
-  static async processPDF(filePath: string): Promise<ProcessedFile> {
-    try {
-      console.log(`[PDF] Начинаем обработку PDF файла: ${filePath}`)
-
-      // Проверяем существование файла
-      try {
-        await fs.access(filePath)
-        console.log(`[PDF] Файл существует и доступен для чтения`)
-      } catch (accessError) {
-        throw new Error(`Файл не найден или недоступен: ${filePath}`)
-      }
-
-      // Импортируем pdf2json
-      const PDFParser = (await import('pdf2json')).default
-      console.log(`[PDF] pdf2json успешно импортирован`)
-
-      // Читаем файл
-      console.log(`[PDF] Читаем файл...`)
-      const dataBuffer = await fs.readFile(filePath)
-      console.log(
-        `[PDF] Файл прочитан, размер буфера: ${dataBuffer.length} байт`
-      )
-
-      // Создаем парсер
-      const pdfParser = new PDFParser()
-      console.log(`[PDF] Создан парсер pdf2json`)
-
-      // Парсим PDF
-      console.log(`[PDF] Начинаем парсинг PDF...`)
-      const pdfData = (await new Promise((resolve, reject) => {
-        pdfParser.on('pdfParser_dataReady', (pdfData) => {
-          console.log(`[PDF] PDF успешно распарсен`)
-          resolve(pdfData)
-        })
-
-        pdfParser.on('pdfParser_dataError', (errData) => {
-          console.error(`[PDF] Ошибка парсинга:`, errData)
-          reject(new Error(`Ошибка парсинга PDF: ${errData.parserError}`))
-        })
-
-        pdfParser.parseBuffer(dataBuffer)
-      })) as any
-
-      console.log(`[PDF] PDF содержит ${pdfData.Pages.length} страниц`)
-
-      // Извлекаем текст со всех страниц
-      let fullText = ''
-      const metadata: any = {
-        pages: pdfData.Pages.length,
-      }
-
-      console.log(`[PDF] Извлекаем текст со всех страниц...`)
-
-      for (let pageIndex = 0; pageIndex < pdfData.Pages.length; pageIndex++) {
-        const page = pdfData.Pages[pageIndex]
-        console.log(
-          `[PDF] Обрабатываем страницу ${pageIndex + 1}/${pdfData.Pages.length}`
-        )
-
-        // Извлекаем текст со страницы
-        const pageText = page.Texts.map((text: any) => {
-          // Декодируем текст (pdf2json использует специальное кодирование)
-          return decodeURIComponent(text.R[0].T)
-        }).join(' ')
-
-        fullText += pageText + '\n'
-      }
-
-      console.log(`[PDF] Текст извлечен, длина: ${fullText.length} символов`)
-
-      // Очищаем текст
-      const cleanText = TextSplitter.cleanText(fullText)
-      console.log(`[PDF] Текст очищен, длина: ${cleanText.length} символов`)
-
-      // Разбиваем на чанки
-      const chunks = TextSplitter.smartSplit(cleanText)
-      console.log(`[PDF] Текст разбит на ${chunks.length} чанков`)
-
-      // Пытаемся получить метаданные
-      if (pdfData.Meta) {
-        metadata.title = pdfData.Meta.Title
-        metadata.author = pdfData.Meta.Author
-        metadata.subject = pdfData.Meta.Subject
-        metadata.keywords = pdfData.Meta.Keywords
-      }
-
-      console.log(`[PDF] Метаданные извлечены:`, metadata)
-
-      return {
-        text: cleanText,
-        chunks: chunks.map((chunk) => ({
-          content: chunk.content,
-          index: chunk.index,
-        })),
-        metadata,
-      }
-    } catch (error) {
-      console.error(`[PDF] Ошибка при обработке PDF:`, error)
-      throw new Error(
-        `Ошибка обработки PDF файла: ${
-          error instanceof Error ? error.message : 'Неизвестная ошибка'
-        }`
-      )
-    }
-  }
-
-  /**
-   * Обрабатывает текстовый файл
-   */
-  static async processTextFile(filePath: string): Promise<ProcessedFile> {
-    try {
-      // Читаем файл
-      const text = await fs.readFile(filePath, 'utf-8')
-
-      // Очищаем текст
-      const cleanText = TextSplitter.cleanText(text)
-
-      // Разбиваем на чанки
-      const chunks = TextSplitter.smartSplit(cleanText)
-
-      return {
-        text: cleanText,
-        chunks: chunks.map((chunk) => ({
-          content: chunk.content,
-          index: chunk.index,
-        })),
-        metadata: {},
-      }
-    } catch (error) {
-      throw new Error(
-        `Ошибка обработки текстового файла: ${
-          error instanceof Error ? error.message : 'Неизвестная ошибка'
-        }`
-      )
-    }
-  }
-
-  /**
-   * Обрабатывает файл в зависимости от его типа
+   * Обрабатывает файл используя универсальные процессоры
    */
   static async processFile(
     filePath: string,
     mimeType: string
   ): Promise<ProcessedFile> {
-    switch (mimeType) {
-      case 'application/pdf':
-        return await this.processPDF(filePath)
+    try {
+      console.log(`[FileProcessor] Начинаем обработку файла: ${filePath}`)
 
-      case 'text/plain':
-        return await this.processTextFile(filePath)
+      // Проверяем существование файла
+      try {
+        await fs.access(filePath)
+        console.log(`[FileProcessor] Файл существует и доступен для чтения`)
+      } catch (accessError) {
+        throw new Error(`Файл не найден или недоступен: ${filePath}`)
+      }
 
-      // TODO: Добавить поддержку других форматов
-      // case 'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-      //   return await this.processDOCX(filePath)
+      // Читаем файл
+      console.log(`[FileProcessor] Читаем файл...`)
+      const dataBuffer = await fs.readFile(filePath)
+      console.log(
+        `[FileProcessor] Файл прочитан, размер буфера: ${dataBuffer.length} байт`
+      )
 
-      default:
-        throw new Error(`Неподдерживаемый тип файла: ${mimeType}`)
+      // Получаем имя файла из пути
+      const fileName = path.basename(filePath)
+
+      // Получаем подходящий процессор
+      const processor = documentProcessorFactory.getProcessor(fileName, mimeType)
+      if (!processor) {
+        throw new Error(`Неподдерживаемый тип файла: ${mimeType} (${fileName})`)
+      }
+
+      console.log(`[FileProcessor] Используем процессор: ${processor.constructor.name}`)
+
+      // Валидируем файл
+      if (!processor.validateFile(dataBuffer)) {
+        throw new Error(`Некорректный или поврежденный файл: ${fileName}`)
+      }
+
+      // Извлекаем текст
+      console.log(`[FileProcessor] Извлекаем текст...`)
+      const extractedText = await processor.extractText(filePath, dataBuffer)
+
+      if (!extractedText.trim()) {
+        throw new Error(`Файл не содержит текстового содержимого: ${fileName}`)
+      }
+
+      console.log(`[FileProcessor] Текст извлечен, длина: ${extractedText.length} символов`)
+
+      // Очищаем текст
+      const cleanText = TextSplitter.cleanText(extractedText)
+      console.log(`[FileProcessor] Текст очищен, длина: ${cleanText.length} символов`)
+
+      // Разбиваем на чанки
+      const chunks = TextSplitter.smartSplit(cleanText)
+      console.log(`[FileProcessor] Создано ${chunks.length} чанков`)
+
+      // Определяем формат
+      const format = path.extname(fileName).toLowerCase().substring(1)
+
+      return {
+        text: cleanText,
+        chunks: chunks.map((chunk) => ({
+          content: chunk.content,
+          index: chunk.index,
+        })),
+        metadata: {
+          format,
+          processor: processor.constructor.name,
+        },
+      }
+    } catch (error) {
+      console.error(`[FileProcessor] Ошибка обработки файла:`, error)
+      throw new Error(
+        `Ошибка обработки файла: ${
+          error instanceof Error ? error.message : 'Неизвестная ошибка'
+        }`
+      )
     }
   }
 
@@ -187,7 +110,7 @@ export class FileProcessor {
    * Проверяет, поддерживается ли тип файла
    */
   static isSupportedFileType(mimeType: string): boolean {
-    return FILE_CONFIG.ALLOWED_MIME_TYPES.includes(mimeType as any)
+    return documentProcessorFactory.getSupportedMimeTypes().includes(mimeType)
   }
 
   /**
@@ -197,10 +120,12 @@ export class FileProcessor {
     const extensions: Record<string, string> = {
       'application/pdf': '.pdf',
       'text/plain': '.txt',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
-        '.docx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': '.docx',
+      'application/msword': '.doc',
       'application/epub+zip': '.epub',
       'application/x-fictionbook+xml': '.fb2',
+      'text/xml': '.fb2',
+      'application/xml': '.fb2',
     }
 
     return extensions[mimeType] || ''
@@ -221,17 +146,42 @@ export class FileProcessor {
         return { valid: false, error: 'Файл пустой' }
       }
 
-      // Дополнительные проверки для PDF
-      if (mimeType === 'application/pdf') {
-        const buffer = fsSync.readFileSync(filePath)
-        if (buffer.length < 4 || buffer.toString('ascii', 0, 4) !== '%PDF') {
-          return { valid: false, error: 'Файл не является корректным PDF' }
-        }
+      if (stats.size > FILE_CONFIG.MAX_FILE_SIZE) {
+        return { valid: false, error: `Файл слишком большой. Максимальный размер: ${FILE_CONFIG.MAX_FILE_SIZE / 1024 / 1024}MB` }
+      }
+
+      // Читаем первые байты для валидации
+      const buffer = fsSync.readFileSync(filePath)
+      const fileName = path.basename(filePath)
+      
+      // Получаем процессор для валидации
+      const processor = documentProcessorFactory.getProcessor(fileName, mimeType)
+      if (!processor) {
+        return { valid: false, error: `Неподдерживаемый тип файла: ${mimeType}` }
+      }
+
+      // Валидируем файл через процессор
+      if (!processor.validateFile(buffer)) {
+        return { valid: false, error: `Некорректный формат файла: ${fileName}` }
       }
 
       return { valid: true }
     } catch (error) {
       return { valid: false, error: 'Ошибка валидации файла' }
     }
+  }
+
+  /**
+   * Получает список поддерживаемых расширений
+   */
+  static getSupportedExtensions(): string[] {
+    return documentProcessorFactory.getSupportedExtensions()
+  }
+
+  /**
+   * Получает список поддерживаемых MIME типов
+   */
+  static getSupportedMimeTypes(): string[] {
+    return documentProcessorFactory.getSupportedMimeTypes()
   }
 }

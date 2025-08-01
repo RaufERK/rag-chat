@@ -4,8 +4,8 @@ import crypto from 'crypto'
 import { TextSplitter } from './text-splitter'
 import { FILE_CONFIG } from './file-config'
 import {
-  processDocumentFile,
   documentProcessorFactory,
+  extractTextFromFile,
 } from './document-processors'
 
 export interface ProcessedFileV2 {
@@ -52,7 +52,11 @@ export class MultiFormatFileProcessor {
       console.log(`🔄 Processing file: ${fileName}`)
 
       // Check if file format is supported
-      if (!documentProcessorFactory.isSupported(fileName, mimeType)) {
+      const processor = documentProcessorFactory.getProcessor(
+        fileName,
+        mimeType
+      )
+      if (!processor) {
         const supportedFormats =
           documentProcessorFactory.getSupportedExtensions()
         throw new Error(
@@ -78,16 +82,13 @@ export class MultiFormatFileProcessor {
       const hash = this.calculateFileHash(buffer)
       console.log(`🔐 File hash: ${hash}`)
 
-      // Process document based on format
-      const { text, processor, format } = await processDocumentFile(
-        filePath,
-        buffer,
-        fileName,
-        mimeType
-      )
+      // Extract text using universal processor
+      const text = await extractTextFromFile(filePath)
+      const format = path.extname(fileName).toLowerCase().substring(1)
+      const processorName = processor.constructor.name
 
       console.log(
-        `✅ Text extracted: ${text.length} characters using ${processor}`
+        `✅ Text extracted: ${text.length} characters using ${processorName}`
       )
 
       if (!text.trim()) {
@@ -98,25 +99,24 @@ export class MultiFormatFileProcessor {
       const chunks = await this.createSmartChunks(text, format)
       console.log(`📝 Created ${chunks.length} chunks`)
 
-      // Build metadata
+      // Extract metadata
       const metadata = {
         format,
-        processor,
+        processor: processorName,
         originalSize: buffer.length,
+        pages: this.estimatePages(text),
         title: this.extractTitle(text, format),
-        // Add more metadata extraction based on format
-        ...(format === 'pdf' && { pages: this.estimatePages(text) }),
       }
 
       return {
-        text,
+        text: text.trim(),
         chunks,
         metadata,
         hash,
       }
     } catch (error) {
       console.error(`❌ Error processing file ${fileName}:`, error)
-      throw new Error(`File processing failed: ${error.message}`)
+      throw error
     }
   }
 

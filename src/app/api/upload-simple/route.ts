@@ -1,71 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { writeFile, mkdir } from 'fs/promises'
-import { join } from 'path'
-import { randomUUID } from 'crypto'
+import { documentProcessorFactory } from '@/lib/document-processors'
 
 export async function POST(request: NextRequest) {
   try {
     console.log('📤 [SIMPLE UPLOAD] Processing file upload request')
-
     const formData = await request.formData()
     const file = formData.get('file') as File
+    const testMode = formData.get('testMode') as string
 
     if (!file) {
-      console.log('❌ [SIMPLE UPLOAD] No file found in formData')
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    }
+
+    console.log(
+      `📁 [SIMPLE UPLOAD] File: ${file.name} (${file.size} bytes, ${file.type})`
+    )
+
+    // Get processor
+    const processor = documentProcessorFactory.getProcessor(
+      file.name,
+      file.type
+    )
+    if (!processor) {
+      const supportedExtensions =
+        documentProcessorFactory.getSupportedExtensions()
       return NextResponse.json(
-        { step: 'file_check', error: 'No file provided' },
+        {
+          error: `Unsupported file format. Supported: ${supportedExtensions.join(
+            ', '
+          )}`,
+        },
         { status: 400 }
       )
     }
 
     console.log(
-      `📁 [SIMPLE UPLOAD] Received file: ${file.name} (${file.size} bytes, ${file.type})`
+      `🔧 [SIMPLE UPLOAD] Using processor: ${processor.constructor.name}`
     )
 
-    // Create temporary directory for processing
-    const processId = randomUUID()
-    const uploadDir = join(
-      process.cwd(),
-      'uploads',
-      'temp',
-      'processing',
-      processId
-    )
-    const filePath = join(uploadDir, file.name)
+    // Convert file to buffer
+    const buffer = Buffer.from(await file.arrayBuffer())
 
-    // Create processing directory
-    await mkdir(uploadDir, { recursive: true })
-    console.log(`📁 [SIMPLE UPLOAD] Created temporary directory: ${uploadDir}`)
+    // Validate file
+    if (!processor.validateFile(buffer)) {
+      return NextResponse.json(
+        { error: 'File validation failed' },
+        { status: 400 }
+      )
+    }
 
-    // Save file to temporary location
-    const bytes = await file.arrayBuffer()
-    const buffer = Buffer.from(bytes)
-    await writeFile(filePath, buffer)
-    console.log(`💾 [SIMPLE UPLOAD] File saved to: ${filePath}`)
+    // Extract text
+    const text = await processor.extractText('', buffer)
 
-    // Simple success response
+    console.log(`📝 [SIMPLE UPLOAD] Extracted ${text.length} characters`)
+
     return NextResponse.json({
       success: true,
-      step: 'completed',
-      message: 'File uploaded successfully (simple version)',
-      fileInfo: {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        savedPath: filePath,
-        processId: processId,
-      },
+      filename: file.name,
+      size: file.size,
+      type: file.type,
+      processor: processor.constructor.name,
+      textLength: text.length,
+      preview: text.substring(0, 200) + (text.length > 200 ? '...' : ''),
+      testMode: !!testMode,
     })
   } catch (error) {
     console.error('❌ [SIMPLE UPLOAD] Error:', error)
-    return NextResponse.json(
-      {
-        success: false,
-        step: 'error',
-        error: 'Upload failed',
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

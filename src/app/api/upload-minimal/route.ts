@@ -2,44 +2,40 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    console.log('📤 [MINIMAL UPLOAD] Processing file upload request')
+    console.log('📤 [MINIMAL UPLOAD] Starting minimal upload test')
 
     const formData = await request.formData()
     const file = formData.get('file') as File
 
     if (!file) {
-      console.log('❌ [MINIMAL UPLOAD] No file found in formData')
-      return NextResponse.json(
-        { step: 'file_check', error: 'No file provided' },
-        { status: 400 }
-      )
+      return NextResponse.json({ error: 'No file' }, { status: 400 })
     }
 
-    console.log(
-      `📁 [MINIMAL UPLOAD] Received file: ${file.name} (${file.size} bytes, ${file.type})`
-    )
+    console.log(`📁 [MINIMAL UPLOAD] File: ${file.name}`)
 
-    // Simple success response without file processing
+    // Just read the file as text for TXT files
+    if (file.name.endsWith('.txt')) {
+      const buffer = await file.arrayBuffer()
+      const text = new TextDecoder().decode(buffer)
+
+      return NextResponse.json({
+        success: true,
+        filename: file.name,
+        size: file.size,
+        textLength: text.length,
+        preview: text.substring(0, 100),
+      })
+    }
+
     return NextResponse.json({
       success: true,
-      step: 'completed',
-      message: 'File received successfully (minimal version)',
-      fileInfo: {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-      },
+      filename: file.name,
+      size: file.size,
+      message:
+        'File received but not processed (only TXT supported in minimal mode)',
     })
   } catch (error) {
     console.error('❌ [MINIMAL UPLOAD] Error:', error)
-    return NextResponse.json(
-      {
-        success: false,
-        step: 'error',
-        error: 'Upload failed',
-        details: error instanceof Error ? error.message : String(error),
-      },
-      { status: 500 }
-    )
+    return NextResponse.json({ error: error.message }, { status: 500 })
   }
 }

@@ -1,153 +1,67 @@
 # 📄 Multi-Format File Support Plan
 
-## 🎯 Цель: Поддержка множественных форматов документов
+## 🎯 Цель: Поддержка основных форматов документов
 
-Расширить RAG систему для работы с различными форматами файлов: PDF, TXT, FB2, EPUB, DOC, DOCX.
+Расширить RAG систему для работы с основными форматами файлов: **PDF, TXT, DOC, DOCX**.
 
 ## 🔍 Текущее состояние
 
-### **Что поддерживается сейчас:**
+### **✅ Что поддерживается сейчас:**
 - ✅ **PDF** - через `pdf-parse` библиотеку
-- ❌ **TXT** - не обрабатывается как отдельный формат
-- ❌ **FB2** - не поддерживается 
-- ❌ **EPUB** - не поддерживается
-- ❌ **DOC** - не поддерживается
-- ❌ **DOCX** - не поддерживается
+- ✅ **DOCX** - через `mammoth` библиотеку
+- ✅ **TXT** - простой UTF-8 процессор
+- ⚠️ **DOC** - требует безопасного решения
+- ❌ **FB2** - отложено на потом
+- ❌ **EPUB** - отложено на потом
 
-### **Проблемы:**
-- Ограниченность только PDF форматом
-- Много духовной литературы в FB2/EPUB форматах
-- Пользователи хотят загружать Word документы
-- Простые TXT файлы не обрабатываются оптимально
+### **🚨 Отказ от textract - КРИТИЧЕСКИ ВАЖНО**
 
-## 📚 Анализ форматов и библиотеки
+**Принято решение об отказе от `textract`** по следующим критическим причинам:
 
-### **📄 PDF (уже работает)**
+- ❌ **Критические уязвимости** в зависимостях (14 vulnerabilities: 4 moderate, 9 high, 1 critical)
+- ❌ **Несовместимость с Next.js** - динамические импорты не поддерживаются
+- ❌ **Проблемы с Turbopack** - паника в runtime, AliasMap ошибки
+- ❌ **Сложная архитектура** - много конфликтующих зависимостей
+- ❌ **Проблемы с модулями** - server relative imports не реализованы
+
+### **✅ Архитектурное решение: Специализированные библиотеки**
+
+**Принято решение о использовании специализированных безопасных библиотек:**
+
+| Формат | Библиотека | Статус | Причина выбора |
+|--------|------------|--------|----------------|
+| **.docx** | `mammoth` | ✅ Безопасная, свежая | Активная разработка, нет уязвимостей |
+| **.pdf** | `pdf-parse` | ✅ Простая и активная | Стабильная, хорошо поддерживается |
+| **.txt** | Нативный Node.js | ✅ Встроенная поддержка | Никаких зависимостей |
+| **.doc** | `mammoth` или конвертация | ⚠️ Требует решения | Проблемный формат |
+
+### **📁 Тестовые файлы доступны:**
+```
+test-data/
+├── pdf/ (5 файлов) - духовная литература
+├── docx/ (4 файла) - документы Word
+├── doc/ (5 файлов) - старые документы Word ⭐ ПРИОРИТЕТ
+├── txt/ (12 файлов) - текстовые файлы
+├── epub/ (6 файлов) - отложено
+├── fb2/ (1 файл) - отложено
+└── pptx/ (1 файл) - отложено
+```
+
+**Полный индекс тестовых файлов:** `test-data/FILE_INDEX.md`
+
+### **🎯 Приоритет тестирования:**
+1. **DOC файлы** - основной приоритет (5 файлов доступно)
+2. **DOCX файлы** - работает, но нужно протестировать (4 файла)
+3. **PDF файлы** - работает, но нужно протестировать (5 файлов)
+4. **TXT файлы** - базовая поддержка (12 файлов)
+
+## 📚 Реализация основных парсеров
+
+### **🔄 Безопасные специализированные процессоры**
+
 ```typescript
 import pdfParse from 'pdf-parse'
-// Текущая реализация остается
-```
-
-### **📝 TXT - Plain Text**
-```typescript
-// Простое чтение файла
-const content = await fs.readFile(filePath, 'utf-8')
-// Требует улучшенного chunking для больших файлов
-```
-
-### **📖 FB2 - FictionBook Format**
-```bash
-npm install xml2js
-```
-```typescript
-import xml2js from 'xml2js'
-
-// FB2 - это XML формат для электронных книг
-// Структура: <FictionBook><body><section><p>text</p></section></body></FictionBook>
-const extractTextFromFB2 = async (buffer: Buffer): Promise<string> => {
-  const xml = buffer.toString('utf-8')
-  const parser = new xml2js.Parser()
-  const result = await parser.parseStringPromise(xml)
-  
-  // Извлекаем текст из всех параграфов
-  const extractTextFromNode = (node: any): string => {
-    if (typeof node === 'string') return node
-    if (Array.isArray(node)) return node.map(extractTextFromNode).join(' ')
-    if (node.p) return extractTextFromNode(node.p)
-    if (node.section) return extractTextFromNode(node.section)
-    return ''
-  }
-  
-  return extractTextFromNode(result.FictionBook?.body)
-}
-```
-
-### **📚 EPUB - Electronic Publication**
-```bash
-npm install epub2
-```
-```typescript
-import EPub from 'epub2'
-
-const extractTextFromEPUB = async (filePath: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    const epub = new EPub(filePath)
-    epub.on('end', () => {
-      const chapters = epub.flow.map(chapter => chapter.id)
-      let fullText = ''
-      
-      let processedChapters = 0
-      chapters.forEach(chapterId => {
-        epub.getChapter(chapterId, (error, text) => {
-          if (error) return reject(error)
-          
-          // Удаляем HTML теги
-          const cleanText = text.replace(/<[^>]*>/g, '').trim()
-          fullText += cleanText + '\n\n'
-          
-          processedChapters++
-          if (processedChapters === chapters.length) {
-            resolve(fullText)
-          }
-        })
-      })
-    })
-    
-    epub.on('error', reject)
-    epub.parse()
-  })
-}
-```
-
-### **📄 DOCX - Microsoft Word (новый формат)**
-```bash
-npm install mammoth
-```
-```typescript
 import mammoth from 'mammoth'
-
-const extractTextFromDOCX = async (buffer: Buffer): Promise<string> => {
-  const result = await mammoth.extractRawText({ buffer })
-  return result.value
-}
-```
-
-### **📄 DOC - Microsoft Word (старый формат)**
-```bash
-npm install textract
-```
-```typescript
-import textract from 'textract'
-
-const extractTextFromDOC = async (filePath: string): Promise<string> => {
-  return new Promise((resolve, reject) => {
-    textract.fromFileWithPath(filePath, (error, text) => {
-      if (error) return reject(error)
-      resolve(text)
-    })
-  })
-}
-```
-
-## 📋 План реализации
-
-### **Phase 1: Универсальный Document Processor (2-3 дня)**
-
-#### 1.1 Установка зависимостей
-```bash
-npm install xml2js epub2 mammoth textract
-npm install @types/xml2js @types/textract
-```
-
-#### 1.2 Создание универсального экстрактора
-```typescript
-// src/lib/document-processors.ts
-export interface DocumentProcessor {
-  supportedMimeTypes: string[]
-  supportedExtensions: string[]
-  extractText(filePath: string, buffer: Buffer): Promise<string>
-  validateFile(buffer: Buffer): boolean
-}
 
 export class PDFProcessor implements DocumentProcessor {
   supportedMimeTypes = ['application/pdf']
@@ -163,107 +77,6 @@ export class PDFProcessor implements DocumentProcessor {
   }
 }
 
-export class TXTProcessor implements DocumentProcessor {
-  supportedMimeTypes = ['text/plain']
-  supportedExtensions = ['.txt']
-  
-  async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    return buffer.toString('utf-8')
-  }
-  
-  validateFile(buffer: Buffer): boolean {
-    // Проверяем, что это валидный UTF-8 текст
-    try {
-      buffer.toString('utf-8')
-      return true
-    } catch {
-      return false
-    }
-  }
-}
-
-export class FB2Processor implements DocumentProcessor {
-  supportedMimeTypes = ['application/x-fictionbook+xml', 'text/xml']
-  supportedExtensions = ['.fb2']
-  
-  async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    const xml = buffer.toString('utf-8')
-    const parser = new xml2js.Parser()
-    const result = await parser.parseStringPromise(xml)
-    
-    // Извлекаем метаданные
-    const title = result.FictionBook?.description?.[0]?.['title-info']?.[0]?.['book-title']?.[0]
-    const author = result.FictionBook?.description?.[0]?.['title-info']?.[0]?.author?.[0]
-    
-    // Извлекаем основной текст
-    const bodyText = this.extractTextFromNode(result.FictionBook?.body)
-    
-    return `${title ? `Название: ${title}\n` : ''}${author ? `Автор: ${author['first-name']} ${author['last-name']}\n\n` : ''}${bodyText}`
-  }
-  
-  private extractTextFromNode(node: any): string {
-    if (typeof node === 'string') return node
-    if (Array.isArray(node)) return node.map(n => this.extractTextFromNode(n)).join(' ')
-    if (node?.p) return this.extractTextFromNode(node.p)
-    if (node?.section) return this.extractTextFromNode(node.section)
-    if (node?.title) return this.extractTextFromNode(node.title) + '\n'
-    return ''
-  }
-  
-  validateFile(buffer: Buffer): boolean {
-    const content = buffer.toString('utf-8', 0, 1000) // Проверяем первые 1000 байт
-    return content.includes('<FictionBook') || content.includes('<?xml')
-  }
-}
-
-export class EPUBProcessor implements DocumentProcessor {
-  supportedMimeTypes = ['application/epub+zip']
-  supportedExtensions = ['.epub']
-  
-  async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    // EPUB - это ZIP архив, поэтому работаем с файлом напрямую
-    return new Promise((resolve, reject) => {
-      const epub = new EPub(filePath)
-      
-      epub.on('end', () => {
-        const chapters = epub.flow.map(chapter => chapter.id)
-        let fullText = ''
-        let processedChapters = 0
-        
-        if (chapters.length === 0) {
-          return resolve('')
-        }
-        
-        chapters.forEach(chapterId => {
-          epub.getChapter(chapterId, (error, text) => {
-            if (error) {
-              console.warn(`Failed to extract chapter ${chapterId}:`, error)
-            } else {
-              const cleanText = text.replace(/<[^>]*>/g, '').trim()
-              if (cleanText) {
-                fullText += cleanText + '\n\n'
-              }
-            }
-            
-            processedChapters++
-            if (processedChapters === chapters.length) {
-              resolve(fullText)
-            }
-          })
-        })
-      })
-      
-      epub.on('error', reject)
-      epub.parse()
-    })
-  }
-  
-  validateFile(buffer: Buffer): boolean {
-    // EPUB файлы начинаются с ZIP сигнатуры
-    return buffer.subarray(0, 4).toString('hex') === '504b0304'
-  }
-}
-
 export class DOCXProcessor implements DocumentProcessor {
   supportedMimeTypes = ['application/vnd.openxmlformats-officedocument.wordprocessingml.document']
   supportedExtensions = ['.docx']
@@ -274,297 +87,80 @@ export class DOCXProcessor implements DocumentProcessor {
   }
   
   validateFile(buffer: Buffer): boolean {
-    // DOCX файлы это ZIP архивы с определенной структурой
     return buffer.subarray(0, 4).toString('hex') === '504b0304'
   }
 }
 
-export class DOCProcessor implements DocumentProcessor {
-  supportedMimeTypes = ['application/msword']
-  supportedExtensions = ['.doc']
+export class TXTProcessor implements DocumentProcessor {
+  supportedMimeTypes = ['text/plain']
+  supportedExtensions = ['.txt']
   
   async extractText(filePath: string, buffer: Buffer): Promise<string> {
-    return new Promise((resolve, reject) => {
-      textract.fromFileWithPath(filePath, { preserveLineBreaks: true }, (error, text) => {
-        if (error) return reject(error)
-        resolve(text || '')
-      })
-    })
+    return buffer.toString('utf-8')
   }
   
   validateFile(buffer: Buffer): boolean {
-    // DOC файлы начинаются с OLE сигнатуры
-    const signature = buffer.subarray(0, 8).toString('hex')
-    return signature === 'd0cf11e0a1b11ae1'
-  }
-}
-
-// Фабрика процессоров
-export class DocumentProcessorFactory {
-  private processors: DocumentProcessor[] = [
-    new PDFProcessor(),
-    new TXTProcessor(),
-    new FB2Processor(),
-    new EPUBProcessor(),
-    new DOCXProcessor(),
-    new DOCProcessor(),
-  ]
-  
-  getProcessor(fileName: string, mimeType?: string): DocumentProcessor | null {
-    const extension = path.extname(fileName).toLowerCase()
-    
-    // Сначала ищем по MIME типу
-    if (mimeType) {
-      const processor = this.processors.find(p => 
-        p.supportedMimeTypes.includes(mimeType)
-      )
-      if (processor) return processor
-    }
-    
-    // Затем по расширению файла
-    const processor = this.processors.find(p => 
-      p.supportedExtensions.includes(extension)
-    )
-    
-    return processor || null
-  }
-  
-  getSupportedExtensions(): string[] {
-    return this.processors.flatMap(p => p.supportedExtensions)
-  }
-  
-  getSupportedMimeTypes(): string[] {
-    return this.processors.flatMap(p => p.supportedMimeTypes)
-  }
-}
-
-export const documentProcessorFactory = new DocumentProcessorFactory()
-```
-
-#### 1.3 Обновленный file-processor
-```typescript
-// src/lib/file-processor-v3.ts (обновленная версия)
-import { documentProcessorFactory } from './document-processors'
-import { calculateFileHash, checkFileExists } from './file-hash'
-
-export async function processUploadedFile(
-  file: File, 
-  uploadedBy: number
-): Promise<{ 
-  isDuplicate: boolean, 
-  fileHash: string, 
-  processedFileId?: number,
-  format: string
-}> {
-  
-  const buffer = Buffer.from(await file.arrayBuffer())
-  const fileHash = calculateFileHash(buffer)
-  
-  // Проверяем дубликат
-  const existingFile = await getFileByHash(fileHash)
-  if (existingFile) {
-    return {
-      isDuplicate: true,
-      fileHash,
-      processedFileId: existingFile.id,
-      format: existingFile.format
-    }
-  }
-  
-  // Определяем процессор для файла
-  const processor = documentProcessorFactory.getProcessor(file.name, file.type)
-  if (!processor) {
-    throw new Error(`Unsupported file format: ${file.name}`)
-  }
-  
-  // Валидируем файл
-  if (!processor.validateFile(buffer)) {
-    throw new Error(`Invalid file format or corrupted file: ${file.name}`)
-  }
-  
-  const format = path.extname(file.name).toLowerCase().substring(1)
-  
-  // Записываем в БД
-  const db = await database
-  const result = await db.run(`
-    INSERT INTO processed_files (
-      file_hash, original_filename, file_size, mime_type, 
-      processing_status, uploaded_by, format, metadata_json
-    ) VALUES (?, ?, ?, ?, 'processing', ?, ?, ?)
-  `, [
-    fileHash, 
-    file.name, 
-    buffer.length, 
-    file.type, 
-    uploadedBy, 
-    format,
-    JSON.stringify({ processor: processor.constructor.name })
-  ])
-  
-  const processedFileId = result.lastID as number
-  
-  try {
-    // Создаем временный файл
-    const tempDir = path.join(process.cwd(), 'temp', 'processing', crypto.randomUUID())
-    await fs.mkdir(tempDir, { recursive: true })
-    const tempFilePath = path.join(tempDir, file.name)
-    await fs.writeFile(tempFilePath, buffer)
-    
-    const startTime = Date.now()
-    
-    // Извлекаем текст используя соответствующий процессор
-    const extractedText = await processor.extractText(tempFilePath, buffer)
-    
-    if (!extractedText.trim()) {
-      throw new Error('No text content extracted from file')
-    }
-    
-    // Создаем chunks
-    const chunks = await createTextChunks(extractedText, {
-      chunkSize: 1000,
-      chunkOverlap: 200,
-      format: format
-    })
-    
-    // Создаем эмбеддинги
-    const embedResults = await createEmbeddingsForChunks(chunks, processedFileId, {
-      format,
-      originalFileName: file.name
-    })
-    
-    const processingTime = Date.now() - startTime
-    
-    // Обновляем статус
-    await db.run(`
-      UPDATE processed_files 
-      SET processing_status = 'completed',
-          chunks_created = ?,
-          embeddings_created = ?,
-          processing_time_ms = ?,
-          processed_at = CURRENT_TIMESTAMP
-      WHERE id = ?
-    `, [chunks.length, embedResults.length, processingTime, processedFileId])
-    
-    // Удаляем временный файл
-    await fs.rm(tempDir, { recursive: true, force: true })
-    
-    return {
-      isDuplicate: false,
-      fileHash,
-      processedFileId,
-      format
-    }
-    
-  } catch (error) {
-    // Обработка ошибок и очистка
-    await db.run(`
-      UPDATE processed_files 
-      SET processing_status = 'failed',
-          error_message = ?
-      WHERE id = ?
-    `, [error.message, processedFileId])
-    
     try {
-      await fs.rm(tempDir, { recursive: true, force: true })
-    } catch {}
-    
-    throw error
-  }
-}
-
-// Улучшенная функция создания chunks с учетом формата
-async function createTextChunks(text: string, options: {
-  chunkSize: number,
-  chunkOverlap: number,
-  format: string
-}): Promise<string[]> {
-  
-  // Для разных форматов используем разные стратегии разбивки
-  switch (options.format) {
-    case 'fb2':
-    case 'epub':
-      // Для книг разбиваем по главам/разделам
-      return splitByChapters(text, options)
-      
-    case 'docx':
-    case 'doc':
-      // Для документов разбиваем по параграфам
-      return splitByParagraphs(text, options)
-      
-    default:
-      // Стандартная разбивка для PDF и TXT
-      return splitByTokens(text, options)
-  }
-}
-
-function splitByChapters(text: string, options: any): string[] {
-  // Ищем разделители глав
-  const chapterMarkers = [
-    /\n\s*Глава\s+\d+/gi,
-    /\n\s*ГЛАВА\s+\d+/gi,
-    /\n\s*Chapter\s+\d+/gi,
-    /\n\s*\d+\.\s*$/gm
-  ]
-  
-  let chapters = [text]
-  
-  for (const marker of chapterMarkers) {
-    const newChapters = []
-    for (const chapter of chapters) {
-      newChapters.push(...chapter.split(marker))
-    }
-    chapters = newChapters.filter(c => c.trim().length > 100) // Минимум 100 символов
-  }
-  
-  // Если главы слишком большие, дополнительно разбиваем
-  return chapters.flatMap(chapter => 
-    chapter.length > options.chunkSize * 2 
-      ? splitByTokens(chapter, options)
-      : [chapter]
-  )
-}
-
-function splitByParagraphs(text: string, options: any): string[] {
-  const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim().length > 50)
-  const chunks = []
-  let currentChunk = ''
-  
-  for (const paragraph of paragraphs) {
-    if (currentChunk.length + paragraph.length > options.chunkSize) {
-      if (currentChunk) chunks.push(currentChunk)
-      currentChunk = paragraph
-    } else {
-      currentChunk += (currentChunk ? '\n\n' : '') + paragraph
+      buffer.toString('utf-8')
+      return true
+    } catch {
+      return false
     }
   }
-  
-  if (currentChunk) chunks.push(currentChunk)
-  return chunks
-}
-
-function splitByTokens(text: string, options: any): string[] {
-  // Существующая логика разбивки
-  const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 0)
-  const chunks = []
-  let currentChunk = ''
-  
-  for (const sentence of sentences) {
-    if (currentChunk.length + sentence.length > options.chunkSize) {
-      if (currentChunk) chunks.push(currentChunk)
-      currentChunk = sentence
-    } else {
-      currentChunk += (currentChunk ? '. ' : '') + sentence
-    }
-  }
-  
-  if (currentChunk) chunks.push(currentChunk)
-  return chunks
 }
 ```
 
-### **Phase 2: Обновление UI и валидации (1-2 дня)**
+## 📋 План реализации
 
-#### 2.1 Обновление компонента загрузки файлов
+### **Phase 1: Удаление textract и установка безопасных библиотек ✅ ЗАВЕРШЕН**
+
+#### 1.1 Удаление textract ✅
+```bash
+npm uninstall textract @types/textract
+```
+
+#### 1.2 Установка безопасных библиотек ✅
+```bash
+npm install pdf-parse mammoth
+```
+
+#### 1.3 Создание специализированных процессоров ✅
+```typescript
+// src/lib/document-processors.ts - СОЗДАН
+export class PDFProcessor implements DocumentProcessor { }
+export class DOCXProcessor implements DocumentProcessor { }
+export class TXTProcessor implements DocumentProcessor { }
+```
+
+### **Phase 2: Решение проблемы с DOC файлами 🎯 ТЕКУЩИЙ ЭТАП**
+
+#### 2.1 Варианты решения DOC файлов:
+- **Вариант A:** Конвертация DOC → DOCX через LibreOffice
+- **Вариант B:** Использование `mammoth` с дополнительными опциями
+- **Вариант C:** Рекомендация пользователям конвертировать в DOCX
+- **Вариант D:** Поиск безопасной альтернативы для DOC
+
+#### 2.2 Тестовые файлы доступны:
+```
+test-data/
+├── pdf/ (5 файлов)
+├── docx/ (4 файла)
+├── doc/ (5 файлов) ⭐
+└── txt/ (12 файлов)
+```
+
+#### 2.3 Тестирование основных форматов:
+```bash
+# Тест всех файлов
+npx tsx scripts/test-upload-api.ts test
+
+# Тест только основных форматов
+npx tsx scripts/test-upload-api.ts test | grep -E "(pdf|docx|txt|doc)"
+```
+
+### **Phase 3: Обновление UI и валидации (1-2 дня)**
+
+#### 3.1 Обновление компонента загрузки файлов
 ```typescript
 // src/components/admin/FileUploadForm.tsx
 'use client'
@@ -675,7 +271,7 @@ export function FileUploadForm() {
             <div>
               <p className="text-lg font-medium">Перетащите файл сюда или нажмите для выбора</p>
               <p className="text-sm text-gray-500">
-                PDF, TXT, FB2, EPUB, DOC, DOCX до 50MB
+                PDF, TXT, DOCX до 50MB
               </p>
             </div>
           </div>
@@ -695,7 +291,7 @@ export function FileUploadForm() {
 }
 ```
 
-#### 2.2 Статистика по форматам файлов
+#### 3.2 Статистика по форматам файлов
 ```typescript
 // src/app/api/admin/files/stats-by-format/route.ts
 export async function GET() {
@@ -725,75 +321,18 @@ export async function GET() {
 }
 ```
 
-### **Phase 3: LangChain.js интеграция с мульти-форматом (1-2 дня)**
-
-#### 3.1 Document Loaders для LangChain
-```typescript
-// src/lib/langchain/document-loaders.ts
-import { Document } from "langchain/document"
-import { BaseDocumentLoader } from "langchain/document_loaders/base"
-import { documentProcessorFactory } from '../document-processors'
-
-export class MultiFormatLoader extends BaseDocumentLoader {
-  constructor(
-    private filePath: string,
-    private buffer: Buffer,
-    private fileName: string,
-    private mimeType?: string
-  ) {
-    super()
-  }
-
-  async load(): Promise<Document[]> {
-    const processor = documentProcessorFactory.getProcessor(this.fileName, this.mimeType)
-    
-    if (!processor) {
-      throw new Error(`Unsupported file format: ${this.fileName}`)
-    }
-
-    const text = await processor.extractText(this.filePath, this.buffer)
-    
-    const format = path.extname(this.fileName).toLowerCase().substring(1)
-    
-    return [
-      new Document({
-        pageContent: text,
-        metadata: {
-          source: this.fileName,
-          format: format,
-          size: this.buffer.length,
-          processor: processor.constructor.name,
-          extractedAt: new Date().toISOString()
-        }
-      })
-    ]
-  }
-}
-
-// Использование в обработке файлов
-export async function createDocumentFromFile(
-  filePath: string, 
-  buffer: Buffer, 
-  fileName: string, 
-  mimeType?: string
-): Promise<Document[]> {
-  const loader = new MultiFormatLoader(filePath, buffer, fileName, mimeType)
-  return await loader.load()
-}
-```
-
 ## 📊 Ожидаемые результаты
 
 ### **📚 Расширение контента:**
-- **+500% форматов** - поддержка 6 типов файлов вместо 1
-- **📖 Духовная литература** - FB2/EPUB форматы популярны в этой области
-- **📄 Офисные документы** - DOC/DOCX для деловой документации
+- **+300% форматов** - поддержка 4 основных типов файлов
+- **📄 Офисные документы** - DOCX для деловой документации
 - **📝 Простые тексты** - TXT файлы для заметок и выписок
+- **📄 PDF документы** - для сканированных документов
 
 ### **🔧 Техническая надежность:**
-- **Валидация форматов** - проверка целостности файлов
-- **Универсальная архитектура** - легко добавить новые форматы
-- **Оптимизированный chunking** - разные стратегии для разных типов
+- **Безопасные библиотеки** - нет уязвимостей
+- **Специализированные парсеры** - лучшая производительность
+- **Совместимость с Next.js** - стабильная работа
 - **Детальная аналитика** - статистика по форматам
 
 ### **👤 Пользовательский опыт:**
@@ -804,21 +343,23 @@ export async function createDocumentFromFile(
 
 ## ✅ Критерии готовности
 
-- [ ] Все 6 форматов корректно обрабатываются
-- [ ] Валидация предотвращает загрузку некорректных файлов
+- [x] Удален textract с уязвимостями
+- [x] Установлены безопасные специализированные библиотеки
+- [x] Созданы специализированные процессоры для основных форматов
+- [ ] Решение проблемы с DOC файлами
+- [ ] Тестирование основных форматов из test-data
 - [ ] UI показывает поддерживаемые форматы
 - [ ] Статистика доступна по каждому формату
-- [ ] LangChain.js интегрирован с мульти-форматными загрузчиками
+- [ ] LangChain.js интегрирован с специализированными парсерами
 - [ ] Производительность оптимизирована для больших файлов
 
 ## 🔮 Будущие расширения
 
-### **Планируемые форматы:**
-- **RTF** - Rich Text Format
-- **ODT** - OpenDocument Text
-- **HTML** - веб-страницы
-- **MD** - Markdown файлы
-- **CSV/XLSX** - табличные данные с текстовыми колонками
+### **Планируемые форматы (отложены):**
+- **FB2** - FictionBook (когда понадобится)
+- **EPUB** - электронные книги (когда понадобится)
+- **RTF** - Rich Text Format (когда понадобится)
+- **ODT** - OpenDocument Text (когда понадобится)
 
 ### **Улучшения обработки:**
 - **OCR для сканированных PDF** - извлечение текста из изображений
@@ -827,4 +368,4 @@ export async function createDocumentFromFile(
 - **Многоязычная поддержка** - определение языка документа
 
 ---
-*Multi-format support превращает RAG систему в универсальный инструмент для работы с любым контентом.*
+*Multi-format support с безопасными специализированными библиотеками для основных форматов превращает RAG систему в надежный инструмент для работы с повседневными документами.*
